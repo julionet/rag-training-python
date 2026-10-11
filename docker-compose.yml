@@ -1,0 +1,67 @@
+# Banco (PostgreSQL + pgvector) e aplicação (API e CLI). Spec: .spec/features/F15-conteineres.md
+# Uso só local: o banco não publica porta e a API só aparece em 127.0.0.1.
+
+name: rag-training
+
+x-app: &app
+  image: rag-training-app:local
+  build:
+    context: .
+    args:
+      APP_UID: ${APP_UID:-1000}
+      APP_GID: ${APP_GID:-1000}
+  env_file: .env
+  environment:
+    # sobrepõem o .env do uso local (sem editá-lo)
+    DATABASE_URL: postgresql://rag_user:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}@db:5432/rag_training_db
+    HF_HOME: /cache/huggingface
+    API_HOST: 0.0.0.0
+    API_PORT: "8000"
+  volumes:
+    - rag_hfcache:/cache/huggingface
+    - ${DOCS_DIR:?Defina DOCS_DIR no .env (pasta de documentos do computador)}:/data/docs:ro
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  db:
+    image: pgvector/pgvector:0.8.7-pg18
+    environment:
+      # superusuário só para preparar o banco na primeira subida; a aplicação usa rag_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}
+    volumes:
+      - rag_pgdata:/var/lib/postgresql
+      - ./docker/init-db.sh:/docker-entrypoint-initdb.d/10-init-db.sh:ro
+      - ./sql/setup_admin.sql:/sql/setup_admin.sql:ro
+    healthcheck:
+      # -h 127.0.0.1: só responde depois da inicialização (o servidor temporário não escuta em TCP)
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U rag_user -d rag_training_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    # sem `ports`: o banco só é acessível pela rede interna do Compose
+
+  api:
+    <<: *app
+    command: ["python", "-m", "src.api"]
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+
+  cli:
+    <<: *app
+    profiles: ["tools"]
+    entrypoint: ["python", "-m", "src.cli"]
+    command: []
+
+volumes:
+  rag_pgdata:
+  rag_hfcache:

@@ -54,6 +54,9 @@ data/
   amostras/                arquivos de exemplo e de teste manual
   avaliacao/               documentos e perguntas do comando eval
 .spec/                   especificações (negócio, arquitetura, roadmap, features)
+Dockerfile               imagem da aplicação (API e CLI)
+docker-compose.yml       serviços db, api e cli (perfil tools)
+docker/init-db.sh        preparo do banco na primeira subida do volume
 ```
 
 ## Requisitos e instalação
@@ -62,6 +65,8 @@ data/
 - PostgreSQL com a extensão **pgvector** (desenvolvido com PostgreSQL 18.6 e pgvector 0.8.7).
 - Chave da API da Anthropic.
 - Na primeira execução, o modelo de embeddings é baixado do Hugging Face.
+
+Prefere não instalar nada? Veja a seção [Docker](#docker).
 
 ```bash
 python -m venv .venv
@@ -136,6 +141,111 @@ O menu oferece: adicionar pasta, reindexar uma ou todas, listar, perguntar (modo
 curl -X POST http://127.0.0.1:8000/api/v1/ask -H 'Content-Type: application/json' \
   -d '{"question": "Como funciona o trabalho remoto?"}'
 ```
+
+## Docker
+
+Sobe o banco (PostgreSQL com pgvector) e a aplicação (API e CLI) sem instalar PostgreSQL, pgvector nem Python. Uso **só local**: o banco não publica porta e a API só responde em `127.0.0.1`. O mesmo `Dockerfile` e o mesmo `docker-compose.yml` servem para macOS, Windows e Linux (amd64 e arm64). Spec: [.spec/features/F15-conteineres.md](.spec/features/F15-conteineres.md).
+
+**Requisitos**
+- **Docker Compose v2** (comando `docker compose`, sem hífen). Desenvolvido com Docker 29.8.2 e Compose 5.5.1.
+- macOS: Docker Desktop. Windows 11: Docker Desktop com **WSL 2**. Linux: Docker Engine com o plugin Compose.
+- Pelo menos **4 GB de memória** para o Docker e cerca de **8 GB de disco** (imagem 2,2 GB, cache do modelo 4,3 GB e banco). No Docker Desktop o limite se ajusta nas configurações; no WSL 2, em `.wslconfig` (`memory=4GB`).
+- **Internet no primeiro uso:** o modelo `BAAI/bge-m3` (cerca de 4,3 GB no volume) é baixado na primeira vetorização e guardado no volume `rag_hfcache`.
+- No Docker a vetorização roda **em CPU** (o Docker não expõe o MPS do Mac nem GPU), então PDFs grandes demoram mais.
+
+**1. Configurar o `.env`** (copie de `.env.example` e preencha; o `.env` nunca vai para o Git nem para a imagem):
+
+| Variável | Para quê |
+|---|---|
+| `ANTHROPIC_API_KEY`, `LLM_MODEL` | Resposta do `ask`. |
+| `POSTGRES_PASSWORD` | Senha do `rag_user` no banco do Docker. Obrigatória. Só vale na **primeira** subida do volume (ver "Trocar a senha"). |
+| `DOCS_DIR` | Pasta de documentos do computador, montada **somente leitura** em `/data/docs`. Obrigatória. |
+| `API_PORT` | Porta da API no computador (padrão `8000`). Mude se já houver algo nela, por exemplo `API_PORT=8001`. |
+| `APP_UID`, `APP_GID` | Só no Linux, se o seu usuário não for `1000`: use `id -u` e `id -g` e refaça o `docker compose build`. |
+
+`DATABASE_URL`, `API_HOST` e `HF_HOME` **não** precisam ser mudados: o Compose os define para os contêineres, e o `.env` do uso local continua valendo fora do Docker.
+
+Exemplos de `DOCS_DIR` (use barras `/`, inclusive no Windows):
+
+| Sistema | Exemplo |
+|---|---|
+| macOS | `DOCS_DIR=/Users/ana/docs` |
+| Linux | `DOCS_DIR=/home/ana/docs` |
+| Windows | `DOCS_DIR=C:/Users/ana/docs` |
+
+**2. Subir e preparar**
+
+```bash
+# macOS / Linux (bash, zsh)
+cp .env.example .env            # depois edite o .env
+docker compose build
+docker compose up -d            # sobe db e api
+docker compose run --rm cli init-db
+docker compose run --rm cli check
+```
+
+```powershell
+# Windows (PowerShell)
+Copy-Item .env.example .env     # depois edite o .env
+docker compose build
+docker compose up -d
+docker compose run --rm cli init-db
+docker compose run --rm cli check
+```
+
+**3. Usar.** Os comandos da CLI são os mesmos, com o prefixo `docker compose run --rm cli`. Os **caminhos são os de dentro do contêiner** (`/data/docs/...`), iguais nos três sistemas; o caminho do computador só aparece no `DOCS_DIR`.
+
+```bash
+docker compose run --rm cli ingest /data/docs
+docker compose run --rm cli search "erro E-5107"
+docker compose run --rm cli ask "Como funciona o trabalho remoto?"
+docker compose run --rm cli folders
+docker compose run --rm cli delete /data/docs/arquivo.pdf     # pede confirmação [s/N]
+curl http://127.0.0.1:8000/api/v1/health                       # use a porta do API_PORT
+```
+
+Para o `eval`, cadastre os documentos de avaliação que vêm na imagem: `docker compose run --rm cli ingest /app/data/avaliacao` e depois `docker compose run --rm cli eval`.
+
+A base do Docker **começa vazia**: os documentos precisam ser cadastrados de novo, porque a tabela `sources` guarda os caminhos de dentro do contêiner. Migrar uma base do uso local não faz parte desta versão.
+
+**Parar e apagar**
+
+| Comando | Efeito |
+|---|---|
+| `docker compose down` | Para tudo. **Banco e modelo continuam** nos volumes. |
+| `docker compose up -d` | Volta com os mesmos dados, sem baixar o modelo de novo. |
+| `docker compose down -v` | Apaga os volumes: **a base e o modelo baixado somem**. |
+
+**Acessar o banco.** O banco não tem porta no computador (e por isso não disputa a 5432 com um PostgreSQL local). Para consultar: `docker compose exec db psql -U rag_user -d rag_training_db`.
+
+**Backup e restauração.** O volume `rag_pgdata` é a **única cópia** dos vetores; o backup é responsabilidade de quem roda o Compose. Os comandos funcionam igual em bash e PowerShell:
+
+```bash
+# backup (cria backup.dump na pasta atual)
+docker compose exec -T db pg_dump -U rag_user -Fc rag_training_db -f /tmp/backup.dump
+docker compose cp db:/tmp/backup.dump ./backup.dump
+docker compose exec -T db rm /tmp/backup.dump
+
+# restauração (num banco já inicializado; roda como postgres para recriar a extensão)
+docker compose cp ./backup.dump db:/tmp/backup.dump
+docker compose exec -T db pg_restore -U postgres -d rag_training_db --clean --if-exists /tmp/backup.dump
+docker compose exec -T db rm /tmp/backup.dump
+```
+
+Não use `--no-owner` na restauração: as tabelas passariam a pertencer ao `postgres` e o `rag_user` perderia o acesso.
+
+**Trocar a senha.** O `POSTGRES_PASSWORD` só é lido ao criar o volume. Para mudar depois: altere no `.env` **e** rode `docker compose exec db psql -U postgres -c "ALTER ROLE rag_user PASSWORD 'nova-senha'"`, ou apague os volumes com `down -v` (perde a base).
+
+**Problemas comuns**
+
+| Sintoma | Causa e solução |
+|---|---|
+| `ports are not available ... 8000: address already in use` | Outra coisa usa a porta (por exemplo a API local). Defina `API_PORT=8001` no `.env` e rode `docker compose up -d`. |
+| `required variable POSTGRES_PASSWORD is missing` / `DOCS_DIR` | Faltam no `.env`. |
+| Processo encerrado com código 137 ao carregar o modelo | Pouca memória para o Docker. Aumente para 4 GB ou mais. |
+| `ingest` diz que o arquivo ou a pasta não existe | Foi usado o caminho do computador. Use `/data/docs/...`. |
+| No Linux, `ingest` não consegue ler os arquivos | O usuário do contêiner (`APP_UID`/`APP_GID`) não tem permissão de leitura em `DOCS_DIR`. Ajuste os dois valores e rode `docker compose build`. |
+| Primeira vetorização demora e baixa muito | É o download do modelo (uma vez só). Sem internet, falha sem gravar nada no banco. |
 
 ## Scripts de apoio
 

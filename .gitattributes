@@ -1,0 +1,4 @@
+# Scripts e SQL são montados dentro de contêineres Linux: precisam de LF,
+# mesmo quando o Git no Windows converteria para CRLF.
+*.sh text eol=lf
+*.sql text eol=lf

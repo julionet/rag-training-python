@@ -1,0 +1,19 @@
+# Segredos e ambiente local
+.env
+.env.*
+.venv/
+
+# Controle de versão, documentação e ferramentas
+.git/
+.claude/
+.spec/
+
+# Lixo de Python e do sistema
+__pycache__/
+*.pyc
+.DS_Store
+
+# PDFs reais (grandes, não versionados) e scripts de apoio
+data/amostras/real.pdf
+data/amostras/grande.pdf
+scripts/

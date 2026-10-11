@@ -273,6 +273,7 @@ src/
   api/                 (F14: __init__.py  __main__.py  routes.py  schemas.py  jobs.py  errors.py)
 sql/setup_admin.sql    (preparação manual, uma vez: usuário, banco e extensão; exige superusuário)
 sql/001_init.sql  002_file_type_md.sql  003_busca_textual.sql
+Dockerfile  docker-compose.yml  .dockerignore  .gitattributes  docker/init-db.sh   (F15)
 scripts/               (check_setup, read_document, chunk_document, embed_document, compare_chunking)
 data/                  (manual_colaborador.txt, amostras/, avaliacao/)
 ```
@@ -322,11 +323,11 @@ Resolvidos: banco `rag_training_db`, usuário `rag_user` (senha só no `.env`); 
 - Como não há rede de segurança automática, o código deve falhar de forma **clara** (mensagens explícitas) e cada feature deve ser verificada logo após implementada, antes de seguir para a próxima.
 - Risco aceito: mudanças futuras podem quebrar comportamentos antigos sem aviso. A mitigação é repetir os roteiros das features anteriores que forem afetadas.
 
-## 15. Contêineres — Dockerfile e Docker Compose (F15, planejada, sem spec)
+## 15. Contêineres — Dockerfile e Docker Compose (F15, verificada em 2026-10-11)
 
 Objetivo: `docker compose up` sobe o banco e a aplicação sem instalar PostgreSQL, pgvector nem Python na máquina.
 
-**Requisito de plataforma (decisão do usuário):** o mesmo `Dockerfile` e o mesmo `docker-compose.yml` precisam funcionar em **macOS, Windows e Linux**, em processadores **amd64** (Intel/AMD) e **arm64** (Apple Silicon e ARM), sem arquivos separados por sistema. Os requisitos que decorrem disso estão na tabela "Requisitos multiplataforma" abaixo. Esta seção registra o que a spec da F15 precisará decidir e cobrir; **nada disto está implementado**.
+**Requisito de plataforma (decisão do usuário):** o mesmo `Dockerfile` e o mesmo `docker-compose.yml` precisam funcionar em **macOS, Windows e Linux**, em processadores **amd64** (Intel/AMD) e **arm64** (Apple Silicon e ARM), sem arquivos separados por sistema. Os requisitos que decorrem disso estão na tabela "Requisitos multiplataforma" abaixo. O desenho detalhado está em [features/F15-conteineres.md](features/F15-conteineres.md) (spec aprovada em 2026-10-11); em caso de divergência, vale a spec. Esta seção é o resumo de arquitetura.
 
 **Fatos do projeto que condicionam a F15**
 - Python 3.10 ou superior. `requirements.txt` **sem versões fixadas**: `anthropic`, `sentence-transformers`, `numpy`, `python-dotenv`, `psycopg[binary]`, `pymupdf4llm`, `pgvector` (e `fastapi` e `uvicorn` com a F14). A imagem precisa de versões fixadas para ser reproduzível.
@@ -342,7 +343,7 @@ Objetivo: `docker compose up` sobe o banco e a aplicação sem instalar PostgreS
 **Decisões de desenho** (as marcadas "decisão do usuário" ou listadas abaixo como decisões já foram tomadas; as demais são propostas a confirmar na spec)
 | Tema | Proposta |
 |---|---|
-| Serviços | `db` (`pgvector/pgvector`, tag `pg18` a confirmar), `api` (F14) e `cli` (perfil `tools`, usado com `docker compose run --rm cli <comando>` para `init-db`, `ingest`, `eval`), **a `api` e a `cli` na mesma imagem**. |
+| Serviços | `db` (`pgvector/pgvector:0.8.7-pg18`, tag fixada e conferida em amd64 e arm64), `api` (F14) e `cli` (perfil `tools`, usado com `docker compose run --rm cli <comando>` para `init-db`, `ingest`, `eval`), **a `api` e a `cli` na mesma imagem**. |
 | Imagem da aplicação | Dockerfile multi-etapas, usuário sem privilégio, `torch` em versão CPU para reduzir a imagem, versões fixadas, sem `.env`, `.venv`, `.git` nem PDFs reais (`data/amostras/real.pdf` e `grande.pdf`) no contexto (`.dockerignore`). |
 | Volumes | Volume nomeado para os dados do PostgreSQL; volume nomeado para o cache do Hugging Face (`HF_HOME`); **bind mount somente leitura** da pasta de documentos. |
 | Rede | Porta da API publicada como `127.0.0.1:8000:8000` (dentro do contêiner a API escuta em `0.0.0.0`; a restrição fica no mapeamento de porta). Banco **sem** porta publicada (ou só em `127.0.0.1`). `DATABASE_URL` com host `db`. |
@@ -363,7 +364,7 @@ Objetivo: `docker compose up` sobe o banco e a aplicação sem instalar PostgreS
 | Maiúsculas e minúsculas | Linux diferencia `Manual.pdf` de `manual.pdf`; macOS e Windows não. Conferir se algum caminho ou nome de arquivo do projeto depende disso. |
 | Rede | Mapear `127.0.0.1:8000:8000` em todos os sistemas (a restrição de rede da F14 vale igual). Para acessar o PostgreSQL do host, não usar `network_mode: host` (não existe no Docker Desktop). |
 | Compose | Usar a sintaxe do **Docker Compose v2** (`docker compose`, sem hífen) e sem recursos exclusivos de um sistema. Versão mínima do Docker e do Compose documentada no README. |
-| Recursos | ≥ 4 GB de memória para o Docker e cerca de 6 GB de disco (imagem, modelo e banco); em Windows e Mac o limite é configurado no Docker Desktop/WSL 2, em Linux vale a memória do host. |
+| Recursos | ≥ 4 GB de memória para o Docker e cerca de 8 GB de disco (imagem 2,2 GB, cache do modelo 4,3 GB medido na F15 e banco); em Windows e Mac o limite é configurado no Docker Desktop/WSL 2, em Linux vale a memória do host. |
 | Tempo | CPU sem GPU: o cadastro de PDFs grandes é mais lento em qualquer sistema; registrar o tempo medido de `grande.pdf` em cada sistema testado, sem meta fixa. |
 
 **Fora do escopo da F15:** Kubernetes ou outra orquestração, HTTPS e proxy reverso, GPU no contêiner, CI/CD, publicação em registry, autenticação da API (é a evolução de controle de acesso).
@@ -373,11 +374,11 @@ Objetivo: `docker compose up` sobe o banco e a aplicação sem instalar PostgreS
 2. **Uma imagem, dois usos:** um só `Dockerfile` e uma só imagem; o serviço `api` roda `python -m src.api` e o serviço `cli` (perfil `tools`) usa a mesma imagem com `docker compose run --rm cli <comando>`.
 3. **Documentos:** variável `DOCS_DIR` no `.env` (pasta do computador), montada **somente leitura** em `/data/docs`; os comandos usam `/data/docs/...` nos três sistemas. A base do Docker **começa vazia** e os documentos são cadastrados de novo, porque a tabela `sources` guarda caminhos e os de um banco local (`/Users/...`) não existem no contêiner. Migrar uma base local para o Docker não faz parte da F15.
 4. **Imagem do banco:** `pgvector/pgvector` oficial com a tag `pg18`. A tag e as arquiteturas **amd64 e arm64 devem ser conferidas no Docker Hub ao escrever a spec**; se não existirem, construir a imagem a partir de `postgres:18` instalando o pgvector. Atenção: nas imagens do PostgreSQL 18 mudou o diretório de dados; conferir o ponto de montagem do volume.
-5. **Versões:** fixar com `==` as 7 bibliotecas diretas do `requirements.txt` (as que funcionam hoje no `.venv`) e a versão do Python da imagem. Dependências indiretas não são travadas. A alteração do `requirements.txt` vale também para quem instala sem Docker.
+5. **Versões:** fixar com `==` as 9 bibliotecas diretas do `requirements.txt` (as que funcionam hoje no `.venv`; eram 7 antes da F14) e a versão do Python da imagem. Dependências indiretas não são travadas. A alteração do `requirements.txt` vale também para quem instala sem Docker.
 6. **Sistemas com suporte oficial** (o roteiro manual roda em cada um): **macOS Apple Silicon**, **Windows 11 com Docker Desktop (WSL 2)** e **Ubuntu LTS 22.04/24.04 (amd64)**. Windows 10, outras distribuições Linux e macOS Intel ficam como "devem funcionar, não testados". **Uma pessoa da equipe por sistema** executa o roteiro e registra na seção 14.
 7. **Modelo de embeddings:** volume nomeado de cache (`HF_HOME`); o modelo é baixado no **primeiro uso** e reaproveitado. Sem modelo dentro da imagem (a troca da F16 não exige rebuild). O primeiro uso precisa de internet; avisar no README. Na F16, a troca de modelo mantém dois modelos em memória: documentar **≥ 6 GB** para essa operação.
 
-**Pontos em aberto da F15:** nenhum de desenho. Ficam a conferir na spec: tag `pg18` e arquiteturas da imagem do banco, versões exatas das bibliotecas, pacotes de `torch` (CPU), `pymupdf4llm` e `psycopg[binary]` para amd64 e arm64, e o ponto de montagem do volume do PostgreSQL 18.
+**Pontos em aberto da F15:** nenhum. Conferidos em 2026-10-11: tag `0.8.7-pg18` em amd64 e arm64, volume do PG 18 em `/var/lib/postgresql` (`PGDATA=/var/lib/postgresql/18/docker`), versões das bibliotecas e wheels para amd64 e arm64. Backup: com quem roda o Compose.
 
 **Roteiro manual previsto (a detalhar na spec):** `docker compose build`; `up` com banco vazio; `init-db`; `check`; `ingest` de `data/amostras`; `search` e `ask` com resultados iguais aos da instalação local **e entre os sistemas**; `GET /health`; reiniciar e confirmar que banco e modelo persistem (sem novo download); `down` e `up` sem `-v`; a API inacessível de outra máquina; banco sem porta publicada; imagem sem `.env` (`docker history` e `docker run ... env`).
 
