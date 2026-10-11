@@ -276,8 +276,8 @@ Conexão para os testes de banco: `psql "postgresql://rag_user:<SENHA>@localhost
 - **Risco aceito:** conferir o esquema só pelo `check` (nomes de tabelas e índices e a dimensão). Diferenças finas, como tipos de colunas, não são verificadas automaticamente.
 
 **Pontos em aberto** (não bloqueiam a F01)
-- **Mecanismo para migrações futuras** (`002_*.sql`): como `init-db` saberá quais já foram aplicadas. Será decidido quando a primeira migração for necessária (provavelmente a F06).
-- **Idioma da coluna `tsv`** (português e inglês): decisão da F06.
+- ~~**Mecanismo para migrações futuras** (`002_*.sql`).~~ **Resolvido (F06/F13):** `init-db` aplica, em uma transação e em ordem de nome, todos os arquivos `sql/NNN_*.sql`, todos idempotentes; não há tabela de controle de migrações.
+- ~~**Idioma da coluna `tsv`** (português e inglês).~~ **Resolvido na F06:** colunas `tsv` (português) e `tsv_en` (inglês), migração `sql/003_busca_textual.sql`.
 
 ## 12. Documentação a atualizar
 - `.env.example`: acrescentar `DATABASE_URL` com o placeholder `<SENHA>`.
