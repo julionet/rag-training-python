@@ -13,7 +13,13 @@ from src.loaders import ACCEPTED_TYPES, LoaderError
 
 
 class FolderError(Exception):
-    """Erro esperado de uma pasta, com mensagem já pronta para a pessoa."""
+    """Erro esperado de uma pasta, com mensagem já pronta para a pessoa.
+
+    `code` (folder_locked, folder_overlap, not_found) é usado pela API (F14)."""
+
+    def __init__(self, message: str, code: str = "invalid_parameter") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class ConfirmUnavailable(Exception):
@@ -39,7 +45,9 @@ class FolderResult:
     prune_status: str | None = None  # none | removed | declined | unavailable | cancelled
     interrupted: bool = False
     error: str | None = None  # erro da pasta (trava, não encontrada, não registrada)
+    error_code: str | None = None  # folder_locked | not_found (F14)
     fatal: str | None = None  # erro global no meio da execução (modelo, banco)
+    fatal_code: str | None = None  # embedding_model_mismatch | database_unavailable | embedding_error (F14)
     elapsed: float = 0.0
 
     def count(self, outcome: str) -> int:
@@ -145,6 +153,7 @@ def _run_folder(
     folder_missing = not folder.is_dir()
     if folder_missing and not prune:
         result.error = f"A pasta {folder} não foi encontrada em disco. Nada foi alterado."
+        result.error_code = "not_found"
         return result
 
     try:
@@ -189,6 +198,11 @@ def _run_folder(
         result.interrupted = True
     except (EmbeddingError, db.DbError, psycopg.Error) as e:
         result.fatal = str(e)
+        result.fatal_code = (
+            "embedding_model_mismatch"
+            if isinstance(e, db.ModelMismatchError)
+            else "embedding_error" if isinstance(e, EmbeddingError) else "database_unavailable"
+        )
     result.elapsed = time.perf_counter() - started
     return result
 
@@ -220,7 +234,8 @@ def _prune(conn, result: FolderResult, absent, confirm: Confirm | None, folder_m
 def _locked(conn, folder: Path) -> None:
     if not repository.try_lock_folder(conn, str(folder)):
         raise FolderError(
-            f"Já existe uma atualização da pasta {folder} em andamento. Tente novamente quando ela terminar."
+            f"Já existe uma atualização da pasta {folder} em andamento. Tente novamente quando ela terminar.",
+            "folder_locked",
         )
 
 
@@ -231,6 +246,7 @@ def ingest_folder(
     prune: bool = False,
     reporter: Reporter | None = None,
     confirm: Confirm | None = None,
+    embedder_source=None,
 ) -> FolderResult:
     """Cadastra ou atualiza uma pasta (F08, 4.1). Erros da pasta levantam FolderError."""
     reporter = reporter or Reporter()
@@ -242,7 +258,7 @@ def ingest_folder(
     try:
         overlap = repository.find_overlap(conn, str(folder))
         if overlap:
-            raise FolderError(f"{folder} se sobrepõe à pasta já registrada {overlap}. Use uma delas.")
+            raise FolderError(f"{folder} se sobrepõe à pasta já registrada {overlap}. Use uma delas.", "folder_overlap")
         _locked(conn, folder)
         try:
             source = repository.get_source(conn, str(folder))
@@ -252,7 +268,7 @@ def ingest_folder(
             elif recursive is not None and recursive != source.recursive:
                 repository.update_source(conn, source.id, recursive=recursive)
                 source = repository.SourceRow(source.id, source.path, recursive, source.last_indexed_at)
-            provider = ModelProvider(conn, config.EMBEDDING_MODEL)
+            provider = ModelProvider(conn, config.EMBEDDING_MODEL, embedder_source)
             return _run_folder(conn, folder, source, provider, force, prune, reporter, confirm, registered_now)
         finally:
             repository.unlock_folder(conn, str(folder))
@@ -265,6 +281,7 @@ def reindex_folders(
     prune: bool = False,
     reporter: Reporter | None = None,
     confirm: Confirm | None = None,
+    embedder_source=None,
 ) -> Iterator[FolderResult]:
     """Reprocessa a pasta registrada `path`, ou todas se for None (F08). Uma por vez, em ordem de cadastro."""
     reporter = reporter or Reporter()
@@ -277,18 +294,19 @@ def reindex_folders(
                 yield FolderResult(
                     str(folder),
                     error=f"{folder} não está registrada. Cadastre com: python -m src.cli ingest {folder}",
+                    error_code="not_found",
                 )
                 return
             sources = [source]
         else:
             sources = repository.list_sources(conn)
-        provider = ModelProvider(conn, config.EMBEDDING_MODEL)
+        provider = ModelProvider(conn, config.EMBEDDING_MODEL, embedder_source)
         for source in sources:
             folder = Path(source.path)
             try:
                 _locked(conn, folder)
             except FolderError as e:
-                yield FolderResult(str(folder), recursive=source.recursive, error=str(e))
+                yield FolderResult(str(folder), recursive=source.recursive, error=str(e), error_code=e.code)
                 continue
             try:
                 result = _run_folder(conn, folder, source, provider, False, prune, reporter, confirm, False)

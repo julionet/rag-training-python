@@ -3,7 +3,7 @@
 Documentos relacionados: [NEGOCIO.md](NEGOCIO.md) (o quê e por quê) e [ARQUITETURA.md](ARQUITETURA.md) (como).
 Cada feature terá sua especificação em `.spec/features/FNN-nome-curto.md` (ex.: `F05-cadastro-de-documento.md`), sempre criada a partir do template [features/_TEMPLATE.md](features/_TEMPLATE.md).
 
-**Status:** roadmap **aprovado**; **F01–F13 verificadas** (M1 a M4 concluídos); **F14 (API REST)** com spec aprovada, ainda não implementada (M5); **F15 (Docker)** e **F16 (troca de embedding)** só planejadas, sem spec (M6); **F17 (vários provedores de LLM)** só planejada, sem spec (M7). Veja a tabela "Status das features" no fim deste documento.
+**Status:** roadmap **aprovado**; **F01–F14 verificadas** (M1 a M5 concluídos); **F14 (API REST)** verificada (M5); **F15 (Docker)** e **F16 (troca de embedding)** só planejadas, sem spec (M6); **F17 (vários provedores de LLM)** só planejada, sem spec (M7). Veja a tabela "Status das features" no fim deste documento.
 
 ## Como trabalharemos (SDD)
 
@@ -77,7 +77,7 @@ Em vez de construir cada camada inteira, o primeiro marco entrega o caminho comp
 | ~~**Limiar de relevância e tamanho dos trechos.**~~ **Resolvida na F11:** limiar 0,50 (cosseno) e trechos de 900/110 caracteres. | F11 | Medidos com o corpus de `data/avaliacao/`. |
 | **Limites de tamanho de arquivo e de páginas.** | F05 | Podem ser definidos após medir o tempo real de cadastro em F05. |
 | ~~**Idioma da resposta**~~ **Resolvida na F07:** sempre português. | F07 | — |
-| ~~**Caminhos aceitos, tarefas e framework da API.**~~ **Resolvida na F14 (spec aprovada):** sem restrição de caminhos (só `127.0.0.1`), tarefas em memória com fila de um trabalhador, FastAPI + Uvicorn, `DELETE` pelo caminho, `/api/v1` e CORS desligado. | F14 | Spec aprovada em 2026-10-10. |
+| ~~**Caminhos aceitos, tarefas e framework da API.**~~ **Resolvida na F14 (spec aprovada):** sem restrição de caminhos (só `127.0.0.1`), tarefas em memória com fila de um trabalhador, FastAPI + Uvicorn, `DELETE` pelo caminho, `/api/v1` e CORS desligado. | F14 | Spec aprovada em 2026-10-10; implementada e verificada em 2026-10-11. |
 | **Layout real dos PDFs** (colunas, tabelas, cabeçalhos repetidos). | F02, F03 | Exige amostras de PDFs reais. |
 
 ## Fora desta fase (evoluções futuras)
@@ -105,7 +105,7 @@ Ordem sugerida, a planejar depois de M4:
 | F10 | Aprovada | Verificada (2026-10-10) |
 | F11 | Aprovada | Verificada (2026-10-10) |
 | F12 | Aprovada | Verificada (2026-10-10) |
-| F14 | Aprovada | Pendente |
+| F14 | Aprovada | Verificada (2026-10-11) |
 | F15 | Sem spec (planejada) | Pendente |
 | F16 | Sem spec (planejada) | Pendente |
 | F17 | Sem spec (planejada) | Pendente |

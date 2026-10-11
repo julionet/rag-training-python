@@ -8,7 +8,11 @@ from src.repository import DocumentListing, SourceStats
 
 
 class ManagementError(Exception):
-    """Erro esperado, com mensagem já pronta para a pessoa."""
+    """Erro esperado, com mensagem já pronta para a pessoa. `code` (not_found, folder_locked) é usado pela API (F14)."""
+
+    def __init__(self, message: str, code: str = "not_found") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -55,7 +59,8 @@ def delete_target(target: str, confirm: Confirm) -> DeleteResult:
             if others:
                 raise ManagementError(
                     f"{path} não é uma pasta registrada. Para remover um arquivo, informe o arquivo; "
-                    f"para a pasta, informe a pasta registrada ({others[0].path})."
+                    f"para a pasta, informe a pasta registrada ({others[0].path}).",
+                    "not_found",
                 )
             raise ManagementError(f"{path} não está na base. Veja os documentos com: python -m src.cli list")
 
@@ -67,7 +72,8 @@ def delete_target(target: str, confirm: Confirm) -> DeleteResult:
             if not repository.try_lock_folder(conn, lock_path):
                 raise ManagementError(
                     f"Já existe uma atualização da pasta {lock_path} em andamento. "
-                    "Tente novamente quando ela terminar."
+                    "Tente novamente quando ela terminar.",
+                    "folder_locked",
                 )
             locked = lock_path
 

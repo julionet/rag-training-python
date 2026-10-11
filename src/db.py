@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -20,6 +21,10 @@ OPTIONAL_ENV = {
 
 class DbError(Exception):
     """Erro esperado, com mensagem já pronta para a pessoa (sem a senha)."""
+
+
+class ModelMismatchError(DbError):
+    """`EMBEDDING_MODEL` diferente do modelo registrado no banco (F04)."""
 
 
 def _parse(url: str) -> tuple[str, int, str, str]:
@@ -143,7 +148,7 @@ def ensure_embedding_model(conn: psycopg.Connection, model_name: str) -> bool:
     if meta is None:
         return False
     if meta[0] != model_name:
-        raise DbError(mismatch_message(model_name, meta[0]))
+        raise ModelMismatchError(mismatch_message(model_name, meta[0]))
     return True
 
 
@@ -160,6 +165,10 @@ def register_embedding_model(conn: psycopg.Connection, model_name: str, dim: int
             (str(dim),),
         )
     return inserted
+
+
+def migration_names() -> list[str]:
+    return [m.name for m in _migrations()]
 
 
 def init_db() -> list[str]:
@@ -205,58 +214,62 @@ def init_db() -> list[str]:
     return lines
 
 
-def check_environment() -> tuple[list[str], int]:
-    """Roda as verificações. Devolve (linhas, nº de falhas)."""
-    lines: list[str] = []
-    failures = 0
-    warnings = 0
+@dataclass(frozen=True)
+class CheckItem:
+    name: str
+    status: str  # "ok" | "warn" | "fail"
+    detail: str
 
-    def ok(msg: str) -> None:
-        lines.append(f"[OK]    {msg}")
 
-    def fail(msg: str) -> None:
-        nonlocal failures
-        failures += 1
-        lines.append(f"[FALHA] {msg}")
+_CHECK_LABEL = {"ok": "[OK]   ", "warn": "[AVISO]", "fail": "[FALHA]"}
 
-    def warn(msg: str) -> None:
-        nonlocal warnings
-        warnings += 1
-        lines.append(f"[AVISO] {msg}")
+
+def run_checks() -> list[CheckItem]:
+    """Roda as verificações do ambiente (F01, F04, F07) e devolve um item por verificação."""
+    items: list[CheckItem] = []
+
+    def ok(name: str, msg: str) -> None:
+        items.append(CheckItem(name, "ok", msg))
+
+    def fail(name: str, msg: str) -> None:
+        items.append(CheckItem(name, "fail", msg))
+
+    def warn(name: str, msg: str) -> None:
+        items.append(CheckItem(name, "warn", msg))
 
     url = config.DATABASE_URL
     if not url:
-        fail("DATABASE_URL não definida. Copie .env.example para .env e preencha.")
+        fail("database_url", "DATABASE_URL não definida. Copie .env.example para .env e preencha.")
     else:
-        ok(f"DATABASE_URL definida: {describe_url(url)}")
+        ok("database_url", f"DATABASE_URL definida: {describe_url(url)}")
         try:
             conn = connect()
         except DbError as e:
-            fail(str(e))
+            fail("database", str(e))
         else:
             with conn:
                 version = conn.execute("SHOW server_version").fetchone()[0].split()[0]
-                ok(f"Conexão com o Postgres {version}")
+                ok("database", f"Conexão com o Postgres {version}")
 
                 ext = _extension_version(conn)
                 if ext:
-                    ok(f"Extensão vector {ext}")
+                    ok("extension", f"Extensão vector {ext}")
                 else:
-                    fail('Extensão "vector" ausente. Execute sql/setup_admin.sql como superusuário.')
+                    fail("extension", 'Extensão "vector" ausente. Execute sql/setup_admin.sql como superusuário.')
 
                 tables = _existing(conn, "tables")
                 missing_tables = [t for t in EXPECTED_TABLES if t not in tables]
                 for t in missing_tables:
-                    fail(f"Tabela {t} ausente. Execute init-db.")
+                    fail("tables", f"Tabela {t} ausente. Execute init-db.")
                 if not missing_tables:
-                    ok(f"Tabelas: {', '.join(EXPECTED_TABLES)}")
+                    ok("tables", f"Tabelas: {', '.join(EXPECTED_TABLES)}")
 
                 indexes = _existing(conn, "indexes")
                 missing_indexes = [i for i in EXPECTED_INDEXES if i not in indexes]
                 for i in missing_indexes:
-                    fail(f"Índice {i} ausente. Execute init-db.")
+                    fail("indexes", f"Índice {i} ausente. Execute init-db.")
                 if not missing_indexes:
-                    ok(f"Índices: {', '.join(EXPECTED_INDEXES)}")
+                    ok("indexes", f"Índices: {', '.join(EXPECTED_INDEXES)}")
 
                 if "chunks" in tables:
                     row = conn.execute(
@@ -265,9 +278,9 @@ def check_environment() -> tuple[list[str], int]:
                     ).fetchone()
                     dim = row[0] if row else None
                     if dim == EMBEDDING_DIM:
-                        ok(f"chunks.embedding com {EMBEDDING_DIM} dimensões")
+                        ok("embedding_column", f"chunks.embedding com {EMBEDDING_DIM} dimensões")
                     else:
-                        fail(f"chunks.embedding com {dim} dimensões (esperado {EMBEDDING_DIM}).")
+                        fail("embedding_column", f"chunks.embedding com {dim} dimensões (esperado {EMBEDDING_DIM}).")
 
                 if "chunks" in tables:
                     columns = {
@@ -278,39 +291,52 @@ def check_environment() -> tuple[list[str], int]:
                         ).fetchall()
                     }
                     if "tsv_en" not in columns:
-                        fail("Busca textual desatualizada (chunks.tsv_en ausente). Execute init-db.")
+                        fail("text_search", "Busca textual desatualizada (chunks.tsv_en ausente). Execute init-db.")
                     else:
-                        ok("Busca textual em português e inglês (chunks.tsv e chunks.tsv_en)")
+                        ok("text_search", "Busca textual em português e inglês (chunks.tsv e chunks.tsv_en)")
 
                 if "documents" in tables and not _allows_md(_file_type_constraint(conn)):
-                    fail('Restrição documents.file_type não aceita "md". Execute init-db.')
+                    fail("file_type", 'Restrição documents.file_type não aceita "md". Execute init-db.')
 
                 if "app_meta" in tables:
                     meta = get_embedding_meta(conn)
                     if meta is None:
-                        warn("Modelo de embeddings ainda não registrado (será gravado na primeira vetorização).")
+                        warn(
+                            "embedding_model",
+                            "Modelo de embeddings ainda não registrado (será gravado na primeira vetorização).",
+                        )
                     else:
                         registered, registered_dim = meta
                         if config.EMBEDDING_MODEL and registered != config.EMBEDDING_MODEL:
-                            fail(mismatch_message(config.EMBEDDING_MODEL, registered))
+                            fail("embedding_model", mismatch_message(config.EMBEDDING_MODEL, registered))
                         elif registered_dim != EMBEDDING_DIM:
                             fail(
+                                "embedding_model",
                                 f'Modelo de embeddings registrado ("{registered}") com {registered_dim} '
-                                f"dimensões (esperado {EMBEDDING_DIM})."
+                                f"dimensões (esperado {EMBEDDING_DIM}).",
                             )
                         else:
-                            ok(f"Modelo de embeddings: {registered} ({registered_dim} dimensões)")
+                            ok("embedding_model", f"Modelo de embeddings: {registered} ({registered_dim} dimensões)")
 
     for name in ("ANTHROPIC_API_KEY", "LLM_MODEL"):  # exigidas pelo ask (F07); só a presença é conferida
         if getattr(config, name):
-            ok(f"{name} definida")
+            ok(name.lower(), f"{name} definida")
         else:
-            fail(f"{name} não definida. Copie .env.example para .env e preencha.")
+            fail(name.lower(), f"{name} não definida. Copie .env.example para .env e preencha.")
 
     for name, note in OPTIONAL_ENV.items():
         if not getattr(config, name):
-            warn(f"{name} não definida ({note}).")
+            warn(name.lower(), f"{name} não definida ({note}).")
 
+    return items
+
+
+def check_environment() -> tuple[list[str], int]:
+    """Roda as verificações. Devolve (linhas, nº de falhas)."""
+    items = run_checks()
+    failures = sum(1 for i in items if i.status == "fail")
+    warnings = sum(1 for i in items if i.status == "warn")
+    lines = [f"{_CHECK_LABEL[i.status]} {i.detail}" for i in items]
     status = "ambiente OK" if failures == 0 else "ambiente com problemas"
     lines.append(f"Resultado: {status} ({failures} falhas, {warnings} avisos)")
     return lines, failures

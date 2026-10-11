@@ -1,6 +1,6 @@
 # ARQUITETURA — Evolução da aplicação RAG (TXT + MD + PDF, PostgreSQL/pgvector)
 
-Status: **implementada e verificada (F01–F13, marcos M1 a M4); API REST (F14, M5) com spec aprovada, ainda não implementada.** Este documento descreve a arquitetura adotada; trechos marcados com "F12" ou "removido" registram o que existia antes.
+Status: **implementada e verificada (F01–F14, marcos M1 a M5).** Este documento descreve a arquitetura adotada; trechos marcados com "F12" ou "removido" registram o que existia antes.
 Visão de uso e instalação: [README.md](../README.md).
 
 ## 1. Objetivos e restrições
@@ -229,9 +229,9 @@ A opção 5 abre um modo de conversa que mantém o método e o filtro de pasta a
 
 *(F12: os scripts de comparação do fluxo antigo foram removidos; ficam em `scripts/` apenas os de apoio aos roteiros e o `check_setup`.)*
 
-## 8.1 API REST — `python -m src.api` (F14, spec aprovada)
+## 8.1 API REST — `python -m src.api` (F14, verificada)
 
-Mesmas operações da CLI por HTTP, definidas em [features/F14-api-rest.md](features/F14-api-rest.md). **Ainda não implementada.**
+Mesmas operações da CLI por HTTP, definidas em [features/F14-api-rest.md](features/F14-api-rest.md). Implementada em `src/api/`.
 
 - **Camada fina:** as rotas só chamam os serviços que a CLI usa (`search_service`, `answer_service`, `folder_ingestion`, `ingestion`, `management_service`, `evaluation_service`, `check`). Não há regra de negócio na API.
 - **Contrato:** prefixo `/api/v1`, JSON, erro padrão `{"error": {"code", "message", "details"}}`.
@@ -239,7 +239,7 @@ Mesmas operações da CLI por HTTP, definidas em [features/F14-api-rest.md](feat
 - **Tarefas:** `ingest`, `reindex` e `eval` respondem `202` e são acompanhadas em `/jobs/{id}`; ficam **em memória**, em fila de um trabalhador; o modelo de embeddings é carregado uma vez.
 - **Confirmação:** o `[s/N]` da CLI vira `confirm` (`DELETE`) e `confirm_prune` (`ingest` e `reindex`).
 - **Sem autenticação e sem restrição de caminhos nesta fase** (CORS desligado). Todas as rotas ficam em um único `APIRouter` para a dependência de autenticação e autorização (por pessoa, grupo ou documento) entrar depois em um só lugar; até lá, o padrão escuta só em `127.0.0.1`.
-- **Pacote previsto:** `src/api/` (`__main__.py`, `routes.py`, `schemas.py`, `jobs.py`, `errors.py`); dependências: `fastapi` e `uvicorn` (aprovadas).
+- **Pacote:** `src/api/` (`__main__.py`, `routes.py`, `schemas.py`, `jobs.py`, `errors.py`); dependências: `fastapi` e `uvicorn` (aprovadas).
 
 ## 9. Configuração e dependências
 
@@ -251,13 +251,16 @@ HF_TOKEN=
 LLM_MODEL=
 EMBEDDING_MODEL=BAAI/bge-m3
 DATABASE_URL=postgresql://rag_user:<SENHA>@localhost:5432/rag_training_db
+RELEVANCE_THRESHOLD=0.50
+API_HOST=127.0.0.1   # F14: endereço da API; só 127.0.0.1 por padrão
+API_PORT=8000        # F14
 ```
 
 Banco: `rag_training_db`; usuário: `rag_user`. A **senha fica só no `.env`** (que está no `.gitignore`), nunca neste arquivo nem no `.env.example`, que usa o placeholder `<SENHA>`.
 
 (O `.env.example` já usa `LLM_MODEL`; a variável antiga `MODEL` foi corrigida.)
 
-Adicionar a `requirements.txt`, cada pacote junto da feature que o usa: `psycopg[binary]` (F01), `psycopg_pool` e `pgvector` (F05/F06) e `pymupdf4llm` (F02). `rank-bm25` foi removido na F12.
+Adicionar a `requirements.txt`, cada pacote junto da feature que o usa: `psycopg[binary]` (F01), `psycopg_pool` e `pgvector` (F05/F06) e `pymupdf4llm` (F02). `rank-bm25` foi removido na F12. A F14 acrescenta `fastapi` e `uvicorn` (o `pydantic` vem junto).
 
 ## 10. Estrutura alvo
 
@@ -267,6 +270,7 @@ src/
   config.py  loaders.py  chunking.py  embeddings.py
   db.py  repository.py  ingestion.py  folder_ingestion.py  retrieval.py  search_service.py  answer_service.py
   generation.py  management_service.py  menu.py  evaluation.py  evaluation_service.py  cli.py
+  api/                 (F14: __init__.py  __main__.py  routes.py  schemas.py  jobs.py  errors.py)
 sql/setup_admin.sql    (preparação manual, uma vez: usuário, banco e extensão; exige superusuário)
 sql/001_init.sql  002_file_type_md.sql  003_busca_textual.sql
 scripts/               (check_setup, read_document, chunk_document, embed_document, compare_chunking)

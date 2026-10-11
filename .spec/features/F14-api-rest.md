@@ -3,7 +3,7 @@
 | Campo | Valor |
 |---|---|
 | **Status da spec** | Aprovada (2026-10-10) |
-| **Status da implementação** | Pendente |
+| **Status da implementação** | Verificada (2026-10-11) |
 | **Marco** | M5 (ver ROADMAP) |
 | **Depende de** | F05, F06, F07, F08, F09, F11 (e F01 para `init-db` e `check`) |
 | **Regras de negócio** | R1–R11 (todas valem pela API, sem mudança) |
@@ -168,13 +168,13 @@ Response `200`:
       "page": 3,
       "section": "Trabalho remoto",
       "text": "O colaborador pode trabalhar de casa até 3 dias por semana…",
-      "scores": {"rrf": 0.0328, "semantic": 0.56, "lexical": 0.41}
+      "scores": {"score": 0.0328, "semantic": 0.56, "semantic_rank": 1, "lexical": 3.4, "lexical_rank": 2}
     }
   ],
   "elapsed": 0.4
 }
 ```
-`status`: `ok`, `empty_base` (base sem documentos) ou `no_documents_in_folder`; nesses dois últimos `hits` é `[]` e o status HTTP continua `200`. Os campos exatos de `scores` seguem o `SearchHit` (a conferir na implementação).
+`status`: `ok`, `empty_base` (base sem documentos) ou `no_documents_in_folder`; nesses dois últimos `hits` é `[]` e o status HTTP continua `200`. `scores.score` é a pontuação do método usado (RRF, cosseno ou `ts_rank_cd`); `semantic`/`lexical` e as posições (`*_rank`) são `null` quando o método não as calcula. Formato final conferido na implementação.
 
 #### `POST /api/v1/ask` — equivale a `ask` (F07, F11)
 Request: igual ao `/search` (sem `fetch_k` obrigatório).
@@ -195,13 +195,14 @@ Response `200`, com resposta:
 Sem informação (busca vazia, abaixo do limiar `RELEVANCE_THRESHOLD`, ou o Claude não encontrou): `answer` traz a frase padrão da F07, `sources` é `[]`, `status` é `ok`. Se a busca parou antes (base vazia ou pasta sem documentos), `answer` é `null` e `status` é `empty_base` ou `no_documents_in_folder`. O Claude só é chamado quando há trechos acima do limiar. `truncated: true` indica resposta cortada por `max_tokens`.
 
 #### `GET /api/v1/folders` — equivale a `folders` (F09)
+Cada pasta traz também `chunks`; documentos avulsos aparecem como uma linha com `path: null`. No objeto de pasta do `ingest`/`reindex` entram `error` e `error_code` (nulos na maioria dos casos; preenchidos, por exemplo, em pasta travada dentro de um `reindex --all`).
 Response `200`:
 ```json
 {"folders": [{"path": "/dados/documentos/rh", "recursive": true, "documents": 14, "last_indexed_at": "2026-10-10T09:00:35"}]}
 ```
 
 #### `GET /api/v1/documents?folder=<pasta>` — equivale a `list [--folder]` (F09)
-`folder` é opcional. Response `200`:
+`folder` é opcional. Cada documento traz também `pages`. Response `200`:
 ```json
 {
   "folder": "/dados/documentos/rh",
@@ -250,7 +251,7 @@ Request (todos os campos opcionais, com os mesmos padrões da CLI):
   }
 }
 ```
-Os nomes de `rows` e `threshold` seguem o relatório de `src/evaluation_service.py` (a conferir na implementação). A avaliação usa tabelas temporárias e não toca nos dados reais.
+Formato final, conferido na implementação: `result` traz `questions`, `top_k`, `rows` (`strategy`, `max_chars`, `method`, `hit_at_1`, `hit_at_k` com k = `top_k`, `mrr`, `chunks`), `threshold` (`proposed`, `current`, `method` e `table` com `limit`, `kept`, `blocked`), `answers` (`null` ou `method`, `correct`, `total` e `results`) e `elapsed`. A avaliação usa tabelas temporárias e não toca nos dados reais.
 
 ### 4.3 Erros e códigos HTTP
 
@@ -261,6 +262,8 @@ Os nomes de `rows` e `threshold` seguem o relatório de `src/evaluation_service.
 | Pasta, documento ou tarefa inexistente | 404 | `not_found` |
 | Caminho de `ingest`/`reindex` inexistente no servidor | 404 | `not_found` |
 | Pasta em atualização por outra execução (trava da F08) | 409 | `folder_locked` |
+| Pasta que se sobrepõe a outra já registrada (F08) | 409 | `folder_overlap` |
+| Pasta de `reindex` não registrada | 404 | `not_found` |
 | `EMBEDDING_MODEL` diferente do registrado (F04) | 409 | `embedding_model_mismatch` |
 | `DELETE` sem `confirm=true` | 409 | `confirmation_required` |
 | Arquivo com formato não aceito ou PDF sem texto (arquivo avulso) | 422 | `unsupported_file` |
@@ -309,6 +312,12 @@ Falhas de arquivos dentro de um lote **não** geram erro HTTP: aparecem em `file
 | `src/api/errors.py` | Converter `SearchError`, `AskError`, `FolderError`, `ManagementError`, `IngestError` em respostas de erro. | `register_handlers(app)` |
 
 Serviços reaproveitados, sem mudança de regra: `search_service.run_search`, `answer_service.run_ask`, `folder_ingestion.ingest_folder` e `reindex_folders`, `ingestion.process_file`, `management_service.list_folders`, `list_documents` e `delete_target`, `evaluation_service` e os testes do `check` da CLI. Se algum deles escreve na tela ou pede `input()` (por exemplo, `Reporter` e `Confirm`), a API passa um `Reporter` que alimenta `progress` e um `Confirm` que devolve o valor de `confirm`/`confirm_prune`.
+
+**Ajustes nos serviços existentes** (decididos em 2026-10-11; a saída da CLI não muda):
+- `db.check_environment` passa a devolver itens estruturados (`name`, `status`, `detail`) e a CLI só os formata no texto de hoje (`[OK]`, `[AVISO]`, `[FALHA]`). A API usa os mesmos itens no `GET /check`.
+- `FolderError`, `FolderResult.error` (`reindex_folders`) e `ManagementError` ganham um campo `code` (`folder_locked`, `folder_overlap`, `not_found`), que a API converte em `error.code`. As mensagens continuam as mesmas.
+- `ingest_file`, `ingest_folder`, `reindex_folders` e `ModelProvider` aceitam `embedder_source` (opcional; a CLI não passa), para as tarefas da API reaproveitarem o modelo já carregado no `EmbedderCache` em vez de recarregá-lo a cada tarefa. `DbError` ganhou a subclasse `ModelMismatchError` (código `embedding_model_mismatch`), `AskError` ganhou `code` e `DocumentListing` ganhou `id`.
+- `EmbedderCache` ganha uma trava (`threading.Lock`), porque a tarefa em andamento e as consultas `search`/`ask` podem pedir o modelo ao mesmo tempo.
 
 ## 6. Dados
 Sem mudanças no esquema (as tarefas ficam em memória; ver pontos em aberto).
@@ -374,7 +383,8 @@ Não há testes automatizados (ARQUITETURA §14). Este roteiro é o teste.
 | F09 | `folders`, `list`, `delete` | idem |
 | F10 | menu e modo conversa | o menu usa os mesmos serviços |
 | F11 | `eval` | a avaliação roda dentro da API |
-| F01 | `check`, `init-db` | reaproveitados pela API |
+| F01, F04, F07 | `check`, `init-db` | reaproveitados pela API; `check_environment` foi refatorada para itens estruturados (saída da CLI deve ficar idêntica) |
+| F08, F09 | pasta travada, sobreposta e não registrada | `FolderError`, `FolderResult.error` e `ManagementError` ganharam `code` |
 
 ## 11. Riscos e decisões
 **Decisões tomadas** (com o motivo)
@@ -399,8 +409,12 @@ Não há testes automatizados (ARQUITETURA §14). Este roteiro é o teste.
 5. **`DELETE` pelo caminho** (`?path=`), como a CLI.
 6. **Prefixo `/api/v1`** e **CORS desligado**.
 
+**Decisões do usuário durante a preparação da implementação** (2026-10-11)
+7. **Refatorar o `check`** para devolver itens estruturados, com a CLI formatando o mesmo texto de antes.
+8. **Códigos de erro nos serviços de pasta** (`code` em `FolderError`, `FolderResult.error` e `ManagementError`) e novo código `folder_overlap` (409) na seção 4.3.
+
 **Pontos em aberto** (precisam de resposta antes de implementar)
-- Nenhum de desenho. Ficam só os nomes exatos de campos de `scores` (busca) e de `rows`/`threshold` (avaliação), a conferir nos serviços durante a implementação.
+- Nenhum de desenho. Ficam só os nomes exatos de campos de `scores` (busca) e de `rows`/`threshold` (avaliação), a conferir nos serviços durante a implementação. Já conferido no código: `SearchHit` tem `score`, `semantic_rank`, `semantic_score` (cosseno), `lexical_rank` e `lexical_score` (`ts_rank_cd`); `EvalOutcome` tem `configs` (métricas por método: `hit_at` por k e `mrr`), `threshold_rows` (`limit`, `kept`, `blocked`) e `suggestion`. Os exemplos da seção 4.2 foram ajustados a esses nomes.
 
 ## 12. Documentação a atualizar
 - `.spec/ROADMAP.md`: linha F14, marco M5 e status.
@@ -412,14 +426,15 @@ Não há testes automatizados (ARQUITETURA §14). Este roteiro é o teste.
 
 ## 13. Definição de pronto
 - [x] Spec aprovada pela pessoa responsável (2026-10-10)
-- [ ] Código implementado somente no que a spec descreve
-- [ ] Todos os passos do roteiro (seção 9) executados e aprovados
-- [ ] Roteiros de regressão (seção 10) repetidos
-- [ ] Documentação da seção 12 atualizada
-- [ ] Status atualizado nesta spec e no ROADMAP
+- [x] Código implementado somente no que a spec descreve (2026-10-11)
+- [x] Todos os passos do roteiro (seção 9) executados e aprovados (2026-10-11)
+- [x] Roteiros de regressão (seção 10) repetidos (2026-10-11)
+- [x] Documentação da seção 12 atualizada
+- [x] Status atualizado nesta spec e no ROADMAP (como "verificada")
 
 ## 14. Registro de verificação
 
 | Data | Quem executou | Resultado | Observações / falhas encontradas |
 |---|---|---|---|
-| | | | |
+| 2026-10-11 | Claude (execução assistida) | Passos 1 a 30 executados com sucesso; 31 parcial | Banco real com a pasta do usuário; arquivos de teste em pasta temporária, removidos ao final. Passo 4 usou `manual_colaborador.txt` (não estava na base; removido depois). Passo 19: `ask` fora do assunto com chave inválida devolveu a frase padrão (200). Passo 28: divergência devolveu job `failed` e `409` na busca. Passo 29: banco fora simulado com `DATABASE_URL` de porta errada (PostgreSQL não foi parado). Passo 30: escuta só em 127.0.0.1 e sem `Access-Control-*`. Passo 26: `hit@1` 0,94, igual ao `eval` da CLI. Paridade (31): `search` e `eval` conferidos; `ask` só pela API. Falta repetir pela CLI os roteiros de regressão de `ingest`, `reindex`, `delete`, `ask` e do menu. |
+| 2026-10-11 | Usuário | Aprovado | Roteiro completo (seção 9) e regressão da CLI (seção 10) executados pelo usuário, sem falhas. |

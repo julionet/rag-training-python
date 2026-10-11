@@ -235,6 +235,7 @@ class DocumentListing:
     pages: int
     chunks: int
     status: str
+    id: int = 0
 
 
 @dataclass(frozen=True)
@@ -250,7 +251,7 @@ def list_documents(conn: psycopg.Connection, folder: str | None = None) -> list[
     """Documentos com nº de trechos, por caminho; `folder` filtra por prefixo (F09, T7)."""
     try:
         rows = conn.execute(
-            "SELECT d.source_path, d.file_type, d.pages, count(c.id), d.status "
+            "SELECT d.source_path, d.file_type, d.pages, count(c.id), d.status, d.id "
             "FROM documents d LEFT JOIN chunks c ON c.document_id = d.id "
             "WHERE (%(prefix)s::text IS NULL OR starts_with(d.source_path, %(prefix)s::text)) "
             "GROUP BY d.id ORDER BY d.source_path",

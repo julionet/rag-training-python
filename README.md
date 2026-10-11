@@ -46,6 +46,7 @@ src/
   management_service.py  pastas, listagem e remoção
   evaluation.py          perguntas de teste e métricas
   evaluation_service.py  fluxo do comando eval
+  api/                   API REST (rotas, tarefas, erros e esquemas)
 sql/                     migrações 001 a 003 e setup_admin.sql
 scripts/                 scripts de apoio (veja abaixo)
 data/
@@ -86,6 +87,7 @@ python -m src.cli check       # confere ambiente, banco e variáveis
 | `EMBEDDING_MODEL` | Modelo SentenceTransformer, por exemplo `BAAI/bge-m3`. |
 | `HF_TOKEN` | Token do Hugging Face (opcional). |
 | `DATABASE_URL` | Conexão com o Postgres (`postgresql://rag_user:<SENHA>@localhost:5432/rag_training_db`). A senha fica só no `.env`. |
+| `API_HOST` / `API_PORT` | Endereço e porta da API REST. Padrão `127.0.0.1` e `8000`. |
 | `RELEVANCE_THRESHOLD` | Similaridade mínima (0 a 1) do melhor trecho para o `ask` chamar o Claude. Padrão `0.50`; vazio desliga o limiar. |
 
 ## Uso
@@ -115,6 +117,26 @@ python -m src.cli ask "O que significa o erro E-5107?" --method rrf
 
 O menu oferece: adicionar pasta, reindexar uma ou todas, listar, perguntar (modo conversa), remover e verificar o ambiente.
 
+## API REST
+
+`python -m src.api` sobe a API (Uvicorn) com as mesmas operações da CLI; a documentação interativa fica em `http://127.0.0.1:8000/docs`. Prefixo `/api/v1`, JSON, erros no formato `{"error": {"code", "message", "details"}}`.
+
+| Endpoint | Equivale a |
+|---|---|
+| `GET /health`, `GET /check`, `POST /db/init` | saúde, `check`, `init-db` |
+| `POST /ingest`, `POST /reindex` | `ingest`, `reindex` (tarefas: respondem `202` e o resultado sai em `GET /jobs/{id}`) |
+| `POST /search`, `POST /ask` | `search`, `ask` |
+| `GET /folders`, `GET /documents?folder=` | `folders`, `list` |
+| `DELETE /documents?path=&confirm=true`, `DELETE /folders?path=&confirm=true` | `delete` (sem `confirm=true` nada é removido e a prévia é devolvida) |
+| `POST /evaluations` | `eval` (tarefa) |
+
+**Atenção:** a API não tem autenticação e aceita qualquer caminho do servidor em `ingest`. Por isso escuta só em `127.0.0.1` por padrão; abrir para a rede (`API_HOST=0.0.0.0`) é decisão sua. As tarefas ficam em memória, uma por vez, e somem ao reiniciar. Exemplo:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/ask -H 'Content-Type: application/json' \
+  -d '{"question": "Como funciona o trabalho remoto?"}'
+```
+
 ## Scripts de apoio
 
 Executados com `python -m scripts.<nome>`, não fazem parte da CLI:
@@ -139,6 +161,6 @@ Executados com `python -m scripts.<nome>`, não fazem parte da CLI:
 
 ## Limitações e fora de escopo
 - Sem reconhecimento de texto em PDFs escaneados (OCR); outros formatos (Word, planilhas) não são aceitos.
-- Sem API ou interface web e sem controle de acesso: todos veem todos os documentos.
+- Sem interface web e sem controle de acesso: todos veem todos os documentos, e a API não tem autenticação.
 - Trocar o `EMBEDDING_MODEL` exige reindexar a base inteira; hoje o comando só bloqueia e orienta.
 - Os trechos usados na resposta são enviados ao Claude (serviço externo).

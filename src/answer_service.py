@@ -10,7 +10,11 @@ from src.search_service import EmbedderSource, SearchOutcome, run_search
 
 
 class AskError(Exception):
-    """Erro esperado, com mensagem já pronta para a pessoa."""
+    """Erro esperado, com mensagem já pronta para a pessoa. `code` é usado pela API (F14)."""
+
+    def __init__(self, message: str, code: str = "invalid_parameter") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -50,7 +54,7 @@ def relevance_threshold() -> float | None:
     except ValueError:
         value = -1.0
     if not 0 <= value <= 1:
-        raise AskError("RELEVANCE_THRESHOLD inválida: use um número entre 0 e 1 (ex.: 0.45) ou deixe vazia.")
+        raise AskError("RELEVANCE_THRESHOLD inválida: use um número entre 0 e 1 (ex.: 0.45) ou deixe vazia.", "internal_error")
     return value
 
 
@@ -68,7 +72,7 @@ def run_ask(
         raise AskError("Informe a pergunta.")
     for name in ("ANTHROPIC_API_KEY", "LLM_MODEL"):  # antes da busca, que pode carregar o modelo (T1)
         if not getattr(config, name):
-            raise AskError(f"{name} não definida. Copie .env.example para .env e preencha.")
+            raise AskError(f"{name} não definida. Copie .env.example para .env e preencha.", "llm_unavailable")
 
     threshold = relevance_threshold()  # valor inválido falha antes da busca
     search = run_search(text, method, top_k, fetch_k, folder, embedder_source)

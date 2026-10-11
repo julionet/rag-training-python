@@ -77,14 +77,14 @@ O tempo de cadastro de arquivos grandes **não foi definido como critério de su
 - PDFs escaneados (que exigem reconhecimento de texto em imagem).
 - Edição ou criação de documentos pela aplicação.
 - Controle de acesso por pessoa, grupo ou documento.
-- Interface web e acesso por API (a API REST foi especificada na F14, ainda não implementada; a interface web segue fora).
+- Interface web e acesso por API (a API REST foi implementada na F14, sem autenticação; a interface web segue fora).
 - Histórico de conversas entre sessões.
 
 ## 9. Evoluções futuras (roadmap de negócio)
 
 Registradas para planejamento posterior, **não** fazem parte desta fase:
 
-1. **Acesso pela equipe via API e/ou interface web**, para que as pessoas consultem sem usar linha de comando. A **API REST** (F14, sem autenticação) tem spec aprovada (ainda não implementada); a interface web continua futura.
+1. **Acesso pela equipe via API e/ou interface web**, para que as pessoas consultem sem usar linha de comando. A **API REST** (F14, sem autenticação) foi implementada; a interface web continua futura.
 2. **Controle de acesso**: documentos visíveis apenas para pessoas ou grupos autorizados. Hoje todos veem tudo. A **autenticação da API** entra junto com este item.
 3. Reconhecimento de texto em PDFs escaneados.
 4. Outros formatos além de TXT, MD e PDF (Word, planilhas).

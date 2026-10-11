@@ -35,9 +35,10 @@ class IngestResult:
 class ModelProvider:
     """Confere o modelo (F04) e carrega o Embedder só na primeira vez que alguém precisa dele (F08, T4)."""
 
-    def __init__(self, conn, model_name: str | None) -> None:
+    def __init__(self, conn, model_name: str | None, embedder_source=None) -> None:
         self.conn = conn
         self.model_name = model_name
+        self.embedder_source = embedder_source  # F14: a API reaproveita o modelo já carregado
         self._embedder: Embedder | None = None
         self._registered = False
 
@@ -46,9 +47,12 @@ class ModelProvider:
             if not self.model_name:
                 raise EmbeddingError("EMBEDDING_MODEL não definida. Copie .env.example para .env e preencha.")
             self._registered = db.ensure_embedding_model(self.conn, self.model_name)  # falha antes de carregar
-            embedder = Embedder(self.model_name)
-            embedder.check_dimension(db.EMBEDDING_DIM)
-            self._embedder = embedder
+            if self.embedder_source:
+                self._embedder = self.embedder_source(self.model_name)
+            else:
+                embedder = Embedder(self.model_name)
+                embedder.check_dimension(db.EMBEDDING_DIM)
+                self._embedder = embedder
         return self._embedder
 
     def after_write(self) -> bool:
@@ -148,7 +152,9 @@ def process_file(
     raise IngestError("Erro ao gravar o documento (nada foi gravado): conflito de cadastro.")
 
 
-def ingest_file(path: str | Path, progress: Progress | None = None, force: bool = False) -> IngestResult:
+def ingest_file(
+    path: str | Path, progress: Progress | None = None, force: bool = False, embedder_source=None
+) -> IngestResult:
     """Cadastra um arquivo avulso TXT, MD ou PDF; arquivo alterado no mesmo caminho é substituído (F08)."""
     path = Path(path).resolve()
     if path.is_dir():
@@ -160,6 +166,6 @@ def ingest_file(path: str | Path, progress: Progress | None = None, force: bool 
     info = inspect_document(path)  # falha cedo, antes de conectar, com a mensagem da F02
     conn = db.connect()
     try:
-        return process_file(conn, path, None, ModelProvider(conn, model_name), force, progress, info)
+        return process_file(conn, path, None, ModelProvider(conn, model_name, embedder_source), force, progress, info)
     finally:
         conn.close()

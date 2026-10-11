@@ -1,3 +1,4 @@
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -18,13 +19,15 @@ class EmbedderCache:
     def __init__(self) -> None:
         self._embedder: Embedder | None = None
         self._name: str | None = None
+        self._lock = threading.Lock()  # a API (F14) chama de threads diferentes
 
     def __call__(self, model_name: str) -> Embedder:
-        if self._embedder is None or self._name != model_name:
-            embedder = Embedder(model_name)
-            embedder.check_dimension(db.EMBEDDING_DIM)
-            self._embedder, self._name = embedder, model_name
-        return self._embedder
+        with self._lock:
+            if self._embedder is None or self._name != model_name:
+                embedder = Embedder(model_name)
+                embedder.check_dimension(db.EMBEDDING_DIM)
+                self._embedder, self._name = embedder, model_name
+            return self._embedder
 
 
 EmbedderSource = Callable[[str], Embedder]
