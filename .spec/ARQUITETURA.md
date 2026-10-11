@@ -1,6 +1,6 @@
 # ARQUITETURA — Evolução da aplicação RAG (TXT + MD + PDF, PostgreSQL/pgvector)
 
-Status: **implementada e verificada (F01–F13, marcos M1 a M4).** Este documento descreve a arquitetura adotada; trechos marcados com "F12" ou "removido" registram o que existia antes.
+Status: **implementada e verificada (F01–F13, marcos M1 a M4); API REST (F14, M5) com spec aprovada, ainda não implementada.** Este documento descreve a arquitetura adotada; trechos marcados com "F12" ou "removido" registram o que existia antes.
 Visão de uso e instalação: [README.md](../README.md).
 
 ## 1. Objetivos e restrições
@@ -36,6 +36,7 @@ O modelo é adequado: multilíngue (bom em português), 1024 dimensões, context
 - Carregar o modelo **uma vez** por processo.
 - Gravar nome e dimensão do modelo em `app_meta` na **primeira** vetorização, sem nunca sobrescrever. Se `EMBEDDING_MODEL` mudar, a vetorização é **bloqueada** com a orientação de **reindexar** (vetores de modelos diferentes não são comparáveis); a checagem do nome ocorre antes de carregar o modelo (F04).
 - `embed_chunks(embedder, chunks)` vetoriza `Chunk.embedding_text` em fluxo e lotes (padrão 64). Trecho acima de `max_seq_length` (8192 tokens) gera **aviso**, sem bloquear (F04).
+- **Troca de modelo:** hoje só é possível bloqueando e reindexando manualmente; a troca planejada está em §16 (F16).
 - Observação: o bge-m3 também tem modos esparso e multi-vetor, mas isso exige outra biblioteca (FlagEmbedding). Fica **fora do escopo**; a parte lexical é coberta pelo Postgres.
 
 ## 4. Ingestão de arquivos
@@ -227,6 +228,18 @@ A opção 5 abre um modo de conversa que mantém o método e o filtro de pasta a
 
 *(F12: os scripts de comparação do fluxo antigo foram removidos; ficam em `scripts/` apenas os de apoio aos roteiros e o `check_setup`.)*
 
+## 8.1 API REST — `python -m src.api` (F14, spec aprovada)
+
+Mesmas operações da CLI por HTTP, definidas em [features/F14-api-rest.md](features/F14-api-rest.md). **Ainda não implementada.**
+
+- **Camada fina:** as rotas só chamam os serviços que a CLI usa (`search_service`, `answer_service`, `folder_ingestion`, `ingestion`, `management_service`, `evaluation_service`, `check`). Não há regra de negócio na API.
+- **Contrato:** prefixo `/api/v1`, JSON, erro padrão `{"error": {"code", "message", "details"}}`.
+- **Endpoints:** `GET /health`, `GET /check`, `POST /db/init`, `POST /ingest`, `POST /reindex`, `GET /jobs/{id}`, `POST /search`, `POST /ask`, `GET /folders`, `GET /documents`, `DELETE /documents`, `DELETE /folders`, `POST /evaluations`.
+- **Tarefas:** `ingest`, `reindex` e `eval` respondem `202` e são acompanhadas em `/jobs/{id}`; ficam **em memória**, em fila de um trabalhador; o modelo de embeddings é carregado uma vez.
+- **Confirmação:** o `[s/N]` da CLI vira `confirm` (`DELETE`) e `confirm_prune` (`ingest` e `reindex`).
+- **Sem autenticação e sem restrição de caminhos nesta fase** (CORS desligado). Todas as rotas ficam em um único `APIRouter` para a dependência de autenticação e autorização (por pessoa, grupo ou documento) entrar depois em um só lugar; até lá, o padrão escuta só em `127.0.0.1`.
+- **Pacote previsto:** `src/api/` (`__main__.py`, `routes.py`, `schemas.py`, `jobs.py`, `errors.py`); dependências: `fastapi` e `uvicorn` (aprovadas).
+
 ## 9. Configuração e dependências
 
 `.env` / `.env.example`:
@@ -281,7 +294,7 @@ data/                  (manual_colaborador.txt, amostras/, avaliacao/)
 - `ask` devolve resposta com citações e fontes contendo arquivo e página.
 - Perguntas de exemplo do manual (`E-5107`, "posso trabalhar de casa", limite de refeição) retornam o chunk correto em `rrf`.
 - Sem contexto relevante, a resposta é a frase padrão e **nenhuma chamada ao LLM é feita**.
-- Trocar `EMBEDDING_MODEL` sem reindexar gera um aviso claro.
+- Trocar `EMBEDDING_MODEL` sem reindexar gera um aviso claro. *(A troca em si é a F16, §16.)*
 - **Sem testes automatizados:** todos os testes são **manuais**, executados conforme os critérios de aceite de cada feature (ver seção 14).
 
 ## 13. Pontos a confirmar (não assumidos)
@@ -289,6 +302,7 @@ data/                  (manual_colaborador.txt, amostras/, avaliacao/)
 - Limites padrão de tamanho de arquivo/páginas (seção 6.1).
 - Layout real dos PDFs (colunas, tabelas, cabeçalhos e rodapés repetidos): só é possível validar com amostras do usuário. Pode ser necessário remover cabeçalhos e rodapés repetidos.
 - Limiar mínimo de relevância e tamanho final dos chunks: serão definidos com a avaliação da fase 5, não de antemão.
+- **F15 e F16:** os pontos em aberto de cada uma estão no fim das seções 15 e 16.
 
 Resolvidos: banco `rag_training_db`, usuário `rag_user` (senha só no `.env`); `data/index/` foi removido na F12 (revoga a decisão anterior de mantê-lo); **arquivos duplicados (mesmo `sha256`) são ignorados**; **pgvector 0.8.7** (Homebrew) confirmado instalado, com Postgres 18.6.
 
@@ -301,3 +315,72 @@ Resolvidos: banco `rag_training_db`, usuário `rag_user` (senha só no `.env`); 
 - Um banco separado para experimentos pode ser criado manualmente quando for preciso testar sem afetar a base principal.
 - Como não há rede de segurança automática, o código deve falhar de forma **clara** (mensagens explícitas) e cada feature deve ser verificada logo após implementada, antes de seguir para a próxima.
 - Risco aceito: mudanças futuras podem quebrar comportamentos antigos sem aviso. A mitigação é repetir os roteiros das features anteriores que forem afetadas.
+
+## 15. Contêineres — Dockerfile e Docker Compose (F15, planejada, sem spec)
+
+Objetivo: `docker compose up` sobe o banco e a aplicação sem instalar PostgreSQL, pgvector nem Python na máquina. Esta seção registra o que a spec da F15 precisará decidir e cobrir; **nada disto está implementado**.
+
+**Fatos do projeto que condicionam a F15**
+- Python 3.10 ou superior. `requirements.txt` **sem versões fixadas**: `anthropic`, `sentence-transformers`, `numpy`, `python-dotenv`, `psycopg[binary]`, `pymupdf4llm`, `pgvector` (e `fastapi` e `uvicorn` com a F14). A imagem precisa de versões fixadas para ser reproduzível.
+- Banco atual: PostgreSQL 18.6 com pgvector 0.8.7; banco `rag_training_db`, usuário `rag_user`; **senha só no `.env`**, nunca na imagem nem em arquivo versionado.
+- `sql/setup_admin.sql` (usuário, banco e extensão `vector`) exige superusuário e hoje é manual. O `init-db` aplica `sql/NNN_*.sql` em ordem e é idempotente.
+- O `Embedder` escolhe **MPS no Mac, senão CPU** (`src/embeddings.py`). No Docker do Mac não há MPS: roda em **CPU**, mais lento. O código 134 da F04 era do torch com MPS.
+- `BAAI/bge-m3` ocupa cerca de 2,3 GB em disco e 1,4 GB em memória e é baixado do Hugging Face na primeira execução (`HF_TOKEN` opcional). Sem cache persistente, cada contêiner novo baixa de novo.
+- A API (F14) **não tem autenticação**, aceita qualquer caminho em `ingest` e só deve escutar em `127.0.0.1`.
+- O `ingest` lê o disco **do contêiner**: os documentos precisam ser montados por volume, e os caminhos nos comandos são os de dentro do contêiner.
+
+**Arquivos previstos:** `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.env.example` ampliado (valores para o Compose) e seção "Docker" no `README.md`. Se necessário, um script de entrada em `docker/`.
+
+**Decisões propostas (a confirmar na spec)**
+| Tema | Proposta |
+|---|---|
+| Serviços | `db` (imagem oficial com pgvector sobre PostgreSQL 18, tag a confirmar), `api` (F14) e `cli` (perfil `tools`, usado com `docker compose run --rm cli <comando>` para `init-db`, `ingest`, `eval`). |
+| Imagem da aplicação | Dockerfile multi-etapas, usuário sem privilégio, `torch` em versão CPU para reduzir a imagem, versões fixadas, sem `.env`, `.venv`, `.git` nem PDFs reais (`data/amostras/real.pdf` e `grande.pdf`) no contexto (`.dockerignore`). |
+| Volumes | Volume nomeado para os dados do PostgreSQL; volume nomeado para o cache do Hugging Face (`HF_HOME`); **bind mount somente leitura** da pasta de documentos. |
+| Rede | Porta da API publicada como `127.0.0.1:8000:8000` (dentro do contêiner a API escuta em `0.0.0.0`; a restrição fica no mapeamento de porta). Banco **sem** porta publicada (ou só em `127.0.0.1`). `DATABASE_URL` com host `db`. |
+| Segredos | `ANTHROPIC_API_KEY`, `HF_TOKEN` e a senha do banco por `env_file` ou variáveis do ambiente, nunca `ENV` no Dockerfile. |
+| Inicialização do banco | `setup_admin.sql` em `/docker-entrypoint-initdb.d/` (executa só com o volume novo). `init-db` continua um passo explícito da CLI; nenhuma migração automática escondida. |
+| Saúde e ordem | `pg_isready` no `db`, `GET /health` (F14) na `api` e `depends_on` com `condition: service_healthy`. |
+| Recursos | Documentar o mínimo (≥ 4 GB de memória para o Docker) e que PDFs grandes serão mais lentos em CPU. |
+| Backup | Documentar `pg_dump` e restauração; o volume do banco é a única cópia dos vetores. |
+
+**Fora do escopo da F15:** Kubernetes ou outra orquestração, HTTPS e proxy reverso, GPU no contêiner, CI/CD, publicação em registry, autenticação da API (é a evolução de controle de acesso).
+
+**Pontos em aberto da F15:** tag exata da imagem do PostgreSQL 18 com pgvector; versões a fixar em `requirements.txt`; uso só local ou também em servidor; `cli` e `api` na mesma imagem com comandos diferentes ou imagens separadas; atualização do modelo no volume de cache; como entregar os documentos (bind mount fixo ou configurável por `DOCS_DIR`).
+
+**Roteiro manual previsto (a detalhar na spec):** `docker compose build`; `up` com banco vazio; `init-db`; `check`; `ingest` de `data/amostras`; `search` e `ask` com resultados iguais aos da instalação local; `GET /health`; reiniciar e confirmar que banco e modelo persistem (sem novo download); `down` e `up` sem `-v`; a API inacessível de outra máquina; banco sem porta publicada; imagem sem `.env` (`docker history` e `docker run ... env`).
+
+**Regressão prevista:** F01 (`check`, `init-db`), F05/F08 (`ingest` e `reindex` com caminhos do contêiner), F06/F07 e F14 (todos os endpoints).
+
+## 16. Troca do modelo de embeddings — F16 (planejada, sem spec)
+
+Objetivo: trocar `EMBEDDING_MODEL` de forma segura, revetorizando a base inteira, em vez de só bloquear (F04). Esta seção registra o que a spec da F16 precisará decidir e cobrir; **nada disto está implementado**.
+
+**Fatos do projeto que condicionam a F16**
+- `app_meta` guarda `embedding_model` e `embedding_dim` na **primeira** vetorização e **nunca sobrescreve** (`register_embedding_model` com `ON CONFLICT DO NOTHING`, em `src/db.py`). Se o `.env` divergir, `ensure_embedding_model` bloqueia **antes de carregar o modelo**, com a orientação de reindexar. Hoje essa orientação não leva a lugar nenhum: `ingest --force` e `reindex` refazem com o modelo **registrado**.
+- `chunks.embedding` é `vector(1024) NOT NULL` com índice HNSW `vector_cosine_ops` (`sql/001_init.sql`), e `EMBEDDING_DIM = 1024` é constante em `src/db.py`. Um modelo de **outra dimensão** exige migração (nova coluna ou nova dimensão, recriar o índice); não existe conversão entre espaços vetoriais.
+- Os textos (`content`, `tsv`, `tsv_en`) **não dependem do modelo**. Só `embedding` muda. A busca `lexical` segue funcionando durante a troca, e não é preciso reler os arquivos originais.
+- O `RELEVANCE_THRESHOLD` 0,50 e os trechos de 900/110 foram medidos com o `bge-m3` na F11. Outro modelo muda a escala do cosseno e o limite de tokens; limiar e tamanho precisam ser revistos com o `eval`.
+- Alguns modelos exigem prefixos para consulta e documento (por exemplo, a família E5 usa `query:` e `passage:`) e têm `max_seq_length` diferente (o `bge-m3` usa 8192). Hoje o `Embedder` não aplica prefixos.
+- Com a F14, a API tem fila de um trabalhador e devolve `409 embedding_model_mismatch` quando o `.env` diverge; a troca precisa conviver com isso.
+
+**Arquivos previstos:** função de revetorização em `src/embeddings.py` ou módulo novo (ex.: `src/reembedding.py`), subcomando da CLI, `repository.py` (leitura dos trechos em lotes e gravação dos vetores novos), migração `sql/00N_*.sql` para dimensão diferente, item no menu (F10) e endpoint na API (F14), se existirem.
+
+**Decisões propostas (a confirmar na spec)**
+- **Comando dedicado**, por exemplo `python -m src.cli reembed --model <novo> [--yes]`. Nunca como efeito de mudar o `.env`.
+- **Etapas:** (1) validar o modelo novo (carrega, dimensão, `max_seq_length`, prefixos); (2) mostrar o plano (documentos, trechos, dimensões antiga e nova, tempo estimado) e pedir confirmação (R10, R12 propostas no NEGOCIO); (3) revetorizar a partir de `chunks.content`, em lotes e com progresso; (4) trocar `embedding_model`, `embedding_dim` e o índice **só ao final**; (5) rodar o `eval` com o modelo novo e propor o novo limiar.
+- **Atomicidade e disponibilidade** (decidir uma): **A)** coluna sombra `embedding_new` preenchida em lotes, troca no fim em uma transação; a busca continua com o modelo antigo até lá; custa o dobro de espaço para vetores. **B)** transação única com a base bloqueada para escrita; simples, mas longa e com tabela inteira reescrita. **C)** novo banco ou esquema e troca de `DATABASE_URL`; isola, mas exige reingestão dos textos. **Recomendação a registrar: A.**
+- **Interrupção:** retomável (marca quais trechos já têm o vetor novo) ou recomeça do início; a base **nunca** fica com vetores de dois modelos visíveis para a busca (R13 proposta).
+- **Dimensão diferente:** migração idempotente; a dimensão passa a ser lida de `app_meta` em vez da constante `EMBEDDING_DIM`; o `check` compara a coluna com o modelo registrado.
+- **Reversão:** manter o modelo anterior registrado até a conclusão; recomendar `pg_dump` antes (e o documento da F15 descreve o backup).
+- **Qualidade:** comparar hit@k e MRR do modelo novo com o `bge-m3` usando `data/avaliacao/` antes de confirmar; registrar o novo `RELEVANCE_THRESHOLD` e, se necessário, revisar `MAX_CHARS` e `OVERLAP_CHARS` (um `reindex --force` pode ser exigido).
+- **Prefixos:** variáveis opcionais (por exemplo `EMBEDDING_QUERY_PREFIX` e `EMBEDDING_DOC_PREFIX`) ou tabela de modelos conhecidos; a decidir.
+- **Durante a troca:** `ingest` e `reindex` ficam bloqueados (trava global, como a trava por pasta da F08); `search` e `ask` continuam com o modelo antigo na opção A.
+
+**Fora do escopo da F16:** modelos esparsos ou multi-vetor (§3), vários modelos ao mesmo tempo, reranking, troca de dimensão sem reprocessar.
+
+**Pontos em aberto da F16:** estratégia A, B ou C; nome e forma do comando; como configurar prefixos por modelo; tempo de indisponibilidade aceitável; efeito sobre a API em execução; espaço em disco necessário; quais modelos serão candidatos.
+
+**Roteiro manual previsto (a detalhar na spec):** troca para modelo de mesma dimensão; troca para outra dimensão; recusa sem confirmação; interrupção no meio e retomada (nenhuma busca mistura modelos); base vazia; `check` coerente antes, durante e depois; `eval` antes e depois, com novo limiar; busca durante a troca; `ingest` bloqueado durante a troca; reversão.
+
+**Regressão prevista:** F04 (bloqueio por divergência, `check`), F05, F08 (`--force`, `reindex`), F06, F07, F11 (`eval`) e, se existir, F14.

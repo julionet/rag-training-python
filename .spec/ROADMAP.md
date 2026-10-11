@@ -3,7 +3,7 @@
 Documentos relacionados: [NEGOCIO.md](NEGOCIO.md) (o quê e por quê) e [ARQUITETURA.md](ARQUITETURA.md) (como).
 Cada feature terá sua especificação em `.spec/features/FNN-nome-curto.md` (ex.: `F05-cadastro-de-documento.md`), sempre criada a partir do template [features/_TEMPLATE.md](features/_TEMPLATE.md).
 
-**Status:** roadmap **aprovado**; **F01–F13 verificadas** (M1 a M4 concluídos). Veja a tabela "Status das features" no fim deste documento.
+**Status:** roadmap **aprovado**; **F01–F13 verificadas** (M1 a M4 concluídos); **F14 (API REST)** com spec aprovada, ainda não implementada (M5); **F15 (Docker)** e **F16 (troca de embedding)** só planejadas, sem spec (M6). Veja a tabela "Status das features" no fim deste documento.
 
 ## Como trabalharemos (SDD)
 
@@ -15,6 +15,8 @@ Para cada feature, nesta ordem:
 5. Atualizar o status na spec e na tabela de status deste roadmap, e confirmar com você antes da próxima.
 
 Se a implementação revelar algo novo, a spec é atualizada **antes** do código.
+
+**F15 e F16** estão só registradas na documentação (NEGOCIO e ARQUITETURA §15 e §16): a spec de cada uma só é escrita quando o usuário pedir.
 
 ## Testes: somente manuais
 
@@ -41,6 +43,9 @@ Em vez de construir cada camada inteira, o primeiro marco entrega o caminho comp
 | F11 | **Avaliação de qualidade** | Conjunto de perguntas de teste e métricas para comparar estratégias de divisão e definir parâmetros padrão (tamanho dos trechos, limiar de relevância). | Critérios da seção 6 do NEGOCIO | F06, F07 |
 | F13 | **Suporte a Markdown (.md)** | Aceitar `.md` (tipo `md`, migração 002 do `file_type`, `init-db` com várias migrações). Ampliação de F01, F02 e F05. | R4, R7 | F01, F02, F05 |
 | F12 | **Limpeza e documentação final** | Remover os módulos, scripts e dados do fluxo antigo (incluindo `data/index/`), manter só o que a aplicação usa e atualizar o `README.md`. | — | Todas |
+| F14 | **API REST para execução dos fluxos do RAG** | Um endpoint para cada comando da CLI (`init-db`, `check`, `ingest`, `reindex`, `search`, `ask`, `folders`, `list`, `delete`, `eval`), com request e response em JSON, tarefas assíncronas para as operações longas e **sem autenticação** nesta fase. | R1–R11 (sem regra nova) | F05–F11 |
+| F15 | **Contêineres (Dockerfile e Docker Compose)** | Subir banco (PostgreSQL com pgvector) e aplicação (API e CLI) com `docker compose up`, sem instalar PostgreSQL, pgvector nem Python na máquina. **Só planejada: sem spec.** Requisitos em ARQUITETURA §15. | — | F01, F05–F09; F14 para o serviço `api` |
+| F16 | **Troca do modelo de embeddings** | Trocar `EMBEDDING_MODEL` reindexando a base inteira a partir dos trechos já gravados, com confirmação, base consistente e novo limiar medido. **Só planejada: sem spec.** Requisitos em ARQUITETURA §16. | R10 (confirmação) | F04, F08, F11; F14 opcional |
 
 ### Observações sobre as features
 - **Comandos da CLI nascem junto de cada feature** (por exemplo, `ingest` em F05 e `ask` em F07). F10 reúne tudo no menu e na interface final, sem reescrever a lógica.
@@ -55,6 +60,8 @@ Em vez de construir cada camada inteira, o primeiro marco entrega o caminho comp
 | **M2 — Base completa** | F08, F09 | Várias pastas cadastradas, atualização incremental, listagem e remoção. |
 | **M3 — Uso pela equipe** | F10, F11 | Menu completo e qualidade medida, com parâmetros padrão definidos. |
 | **M4 — Encerramento** | F12 | Código legado removido e documentação atualizada. |
+| **M5 — API** | F14 | Todas as operações da CLI executáveis por HTTP, com paridade de resultados. |
+| **M6 — Operação e evolução** | F15, F16 | Subir tudo por Docker Compose com dados e modelo persistentes; trocar o modelo de embeddings com a base consistente e a qualidade medida. |
 
 ## Decisões pendentes que bloqueiam features
 
@@ -62,17 +69,19 @@ Em vez de construir cada camada inteira, o primeiro marco entrega o caminho comp
 |---|---|---|
 | ~~**Busca por palavras em português e inglês.**~~ **Resolvida na F06:** duas colunas (`tsv` português e `tsv_en` inglês), título da seção com peso menor e palavras vazias dos dois idiomas descartadas da pergunta. | F06 | Verificar com documentos nos dois idiomas (roteiro da F06). |
 | ~~**Acesso simultâneo da equipe** (duas pessoas atualizando a mesma pasta ao mesmo tempo).~~ **Resolvida na F08:** trava por pasta (lock consultivo do PostgreSQL) que recusa a segunda atualização. | F05, F08 | — |
-| **Troca de `EMBEDDING_MODEL`** (reindexar a base inteira com outro modelo; hoje a F04 só bloqueia e manda "reindexar"). | Futura | Nenhuma feature planejada a implementa; ver F08, seção 11. |
+| **Troca de `EMBEDDING_MODEL`** (reindexar a base inteira com outro modelo; hoje a F04 só bloqueia e manda "reindexar"). | F16 | **Planejada na F16** (sem spec). Pontos em aberto em ARQUITETURA §16: estratégia de atomicidade, forma do comando, prefixos por modelo e tempo de indisponibilidade. |
+| **Docker/Compose.** Tag da imagem do PostgreSQL 18 com pgvector, versões a fixar no `requirements.txt`, uso só local ou também em servidor, `cli` e `api` no mesmo serviço ou separados. | F15 | **Planejada na F15** (sem spec). Pontos em aberto em ARQUITETURA §15. |
 | ~~**Limiar de relevância e tamanho dos trechos.**~~ **Resolvida na F11:** limiar 0,50 (cosseno) e trechos de 900/110 caracteres. | F11 | Medidos com o corpus de `data/avaliacao/`. |
 | **Limites de tamanho de arquivo e de páginas.** | F05 | Podem ser definidos após medir o tempo real de cadastro em F05. |
 | ~~**Idioma da resposta**~~ **Resolvida na F07:** sempre português. | F07 | — |
+| ~~**Caminhos aceitos, tarefas e framework da API.**~~ **Resolvida na F14 (spec aprovada):** sem restrição de caminhos (só `127.0.0.1`), tarefas em memória com fila de um trabalhador, FastAPI + Uvicorn, `DELETE` pelo caminho, `/api/v1` e CORS desligado. | F14 | Spec aprovada em 2026-10-10. |
 | **Layout real dos PDFs** (colunas, tabelas, cabeçalhos repetidos). | F02, F03 | Exige amostras de PDFs reais. |
 
 ## Fora desta fase (evoluções futuras)
 
 Ordem sugerida, a planejar depois de M4:
-1. API e/ou interface web para acesso da equipe.
-2. Controle de acesso por pessoa, grupo ou documento. Ao especificar F05 e F06, evitaremos decisões de esquema que dificultem isso depois.
+1. Interface web para acesso da equipe. (A **API REST** passou a ser planejada na [F14](features/F14-api-rest.md), sem autenticação.)
+2. Controle de acesso por pessoa, grupo ou documento, **junto da autenticação da API** (F14, seção 11). Ao especificar F05 e F06, evitaremos decisões de esquema que dificultem isso depois.
 3. Reconhecimento de texto em PDFs escaneados.
 4. Outros formatos (Word, planilhas).
 
@@ -93,3 +102,6 @@ Ordem sugerida, a planejar depois de M4:
 | F10 | Aprovada | Verificada (2026-10-10) |
 | F11 | Aprovada | Verificada (2026-10-10) |
 | F12 | Aprovada | Verificada (2026-10-10) |
+| F14 | Aprovada | Pendente |
+| F15 | Sem spec (planejada) | Pendente |
+| F16 | Sem spec (planejada) | Pendente |

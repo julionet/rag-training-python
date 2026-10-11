@@ -77,21 +77,31 @@ O tempo de cadastro de arquivos grandes **não foi definido como critério de su
 - PDFs escaneados (que exigem reconhecimento de texto em imagem).
 - Edição ou criação de documentos pela aplicação.
 - Controle de acesso por pessoa, grupo ou documento.
-- Interface web e acesso por API.
+- Interface web e acesso por API (a API REST foi especificada na F14, ainda não implementada; a interface web segue fora).
 - Histórico de conversas entre sessões.
 
 ## 9. Evoluções futuras (roadmap de negócio)
 
 Registradas para planejamento posterior, **não** fazem parte desta fase:
 
-1. **Acesso pela equipe via API e/ou interface web**, para que as pessoas consultem sem usar linha de comando.
-2. **Controle de acesso**: documentos visíveis apenas para pessoas ou grupos autorizados. Hoje todos veem tudo.
+1. **Acesso pela equipe via API e/ou interface web**, para que as pessoas consultem sem usar linha de comando. A **API REST** (F14, sem autenticação) tem spec aprovada (ainda não implementada); a interface web continua futura.
+2. **Controle de acesso**: documentos visíveis apenas para pessoas ou grupos autorizados. Hoje todos veem tudo. A **autenticação da API** entra junto com este item.
 3. Reconhecimento de texto em PDFs escaneados.
 4. Outros formatos além de TXT, MD e PDF (Word, planilhas).
+5. **Implantação em contêiner (F15, planejada, sem spec):** subir a aplicação e o banco com Docker Compose, para que outra pessoa ou outra máquina rode tudo sem instalar PostgreSQL, pgvector e Python. Os dados (banco e modelo de embeddings) devem sobreviver a reinicializações, e a API, que ainda não tem autenticação, não pode ficar exposta à rede por padrão. Detalhes em ARQUITETURA §15.
+6. **Troca do modelo de embeddings (F16, planejada, sem spec):** hoje o modelo é fixo (`BAAI/bge-m3`) e trocá-lo é bloqueado. A troca passa a ser uma operação explícita, que revetoriza a base inteira. Detalhes em ARQUITETURA §16.
+
+**Regras de negócio propostas para a troca de modelo** (rascunho; só valem depois de formalizadas na spec da F16):
+- **R12 (proposta).** O modelo de embeddings só é trocado por um pedido explícito, nunca por mudança do `.env`, e **com confirmação** (R10) que mostra o que será refeito (documentos, trechos e tempo estimado).
+- **R13 (proposta).** Durante e depois da troca, **uma consulta nunca mistura vetores de modelos diferentes**: ou usa a base antiga completa, ou a nova completa. Uma troca interrompida não deixa a base pela metade (R9).
+- **R14 (proposta).** Depois da troca, a qualidade é **medida de novo** (F11) e o limiar de relevância é revisto antes de a troca ser considerada concluída, porque outro modelo muda a escala das pontuações.
+- Os arquivos originais **não** precisam ser relidos: os trechos de texto já estão na base e só os vetores são refeitos.
 
 ## 10. Pontos em aberto
 
-- Quantas pessoas consultam ao mesmo tempo, e se precisam de histórico de perguntas.
+- Quantas pessoas consultam ao mesmo tempo, e se precisam de histórico de perguntas. (Com a API, a concorrência passa a importar: ver F14.)
 - Meta de tempo para cadastrar arquivos grandes, se vier a ser necessária.
 - Limites de tamanho de arquivo aceitos.
+- **F15 (contêiner):** o Compose será só para uso local/desenvolvimento ou também para um servidor da equipe? Quem guarda o backup do banco?
+- **F16 (troca de modelo):** quanto tempo a base pode ficar indisponível ou lenta durante a troca? Há espaço em disco para guardar os vetores antigos e novos ao mesmo tempo? Quais modelos serão candidatos?
 - ~~Se o idioma da resposta deve acompanhar o da pergunta ou ser sempre português.~~ **Resolvido na F07:** a resposta é sempre em português.
