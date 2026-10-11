@@ -88,7 +88,7 @@ Registradas para planejamento posterior, **não** fazem parte desta fase:
 2. **Controle de acesso**: documentos visíveis apenas para pessoas ou grupos autorizados. Hoje todos veem tudo. A **autenticação da API** entra junto com este item.
 3. Reconhecimento de texto em PDFs escaneados.
 4. Outros formatos além de TXT, MD e PDF (Word, planilhas).
-5. **Implantação em contêiner (F15, planejada, sem spec):** subir a aplicação e o banco com Docker Compose, para que outra pessoa ou outra máquina rode tudo sem instalar PostgreSQL, pgvector e Python. Os dados (banco e modelo de embeddings) devem sobreviver a reinicializações, e a API, que ainda não tem autenticação, não pode ficar exposta à rede por padrão. Detalhes em ARQUITETURA §15.
+5. **Implantação em contêiner (F15, planejada, sem spec):** subir a aplicação e o banco com Docker Compose, para que outra pessoa ou outra máquina rode tudo sem instalar PostgreSQL, pgvector e Python. **Requisito de plataforma:** deve rodar do mesmo jeito em **macOS, Windows e Linux** (processadores Intel/AMD e Apple Silicon/ARM), com o mesmo resultado nas consultas. Os dados (banco e modelo de embeddings) devem sobreviver a reinicializações, e a API, que ainda não tem autenticação, não pode ficar exposta à rede por padrão. Detalhes em ARQUITETURA §15.
 6. **Troca do modelo de embeddings (F16, planejada, sem spec):** hoje o modelo é fixo (`BAAI/bge-m3`) e trocá-lo é bloqueado. A troca passa a ser uma operação explícita, que revetoriza a base inteira. Detalhes em ARQUITETURA §16.
 
 **Regras de negócio propostas para a troca de modelo** (rascunho; só valem depois de formalizadas na spec da F16):
@@ -102,6 +102,6 @@ Registradas para planejamento posterior, **não** fazem parte desta fase:
 - Quantas pessoas consultam ao mesmo tempo, e se precisam de histórico de perguntas. (Com a API, a concorrência passa a importar: ver F14.)
 - Meta de tempo para cadastrar arquivos grandes, se vier a ser necessária.
 - Limites de tamanho de arquivo aceitos.
-- **F15 (contêiner):** o Compose será só para uso local/desenvolvimento ou também para um servidor da equipe? Quem guarda o backup do banco?
-- **F16 (troca de modelo):** quanto tempo a base pode ficar indisponível ou lenta durante a troca? Há espaço em disco para guardar os vetores antigos e novos ao mesmo tempo? Quais modelos serão candidatos?
+- ~~**F15 (contêiner)**~~ **Resolvido (2026-10-11):** uso **só local** nesta fase (servidor da equipe depende de autenticação); sistemas suportados: macOS Apple Silicon, Windows 11 (Docker Desktop com WSL 2) e Ubuntu LTS 22.04/24.04 (amd64), com uma pessoa da equipe testando cada um. Quem guarda o backup do banco continua em aberto (quem roda o Compose).
+- ~~**F16 (troca de modelo)**~~ **Resolvido (2026-10-11):** durante a troca as consultas continuam e as alterações (`ingest`, `reindex`, `delete`) são recusadas; o espaço em disco é irrelevante (≈ 20 MB). Em aberto: qual modelo será adotado de fato (será medido com o `eval`).
 - ~~Se o idioma da resposta deve acompanhar o da pergunta ou ser sempre português.~~ **Resolvido na F07:** a resposta é sempre em português.

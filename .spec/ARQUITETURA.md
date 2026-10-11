@@ -318,23 +318,25 @@ Resolvidos: banco `rag_training_db`, usuário `rag_user` (senha só no `.env`); 
 
 ## 15. Contêineres — Dockerfile e Docker Compose (F15, planejada, sem spec)
 
-Objetivo: `docker compose up` sobe o banco e a aplicação sem instalar PostgreSQL, pgvector nem Python na máquina. Esta seção registra o que a spec da F15 precisará decidir e cobrir; **nada disto está implementado**.
+Objetivo: `docker compose up` sobe o banco e a aplicação sem instalar PostgreSQL, pgvector nem Python na máquina.
+
+**Requisito de plataforma (decisão do usuário):** o mesmo `Dockerfile` e o mesmo `docker-compose.yml` precisam funcionar em **macOS, Windows e Linux**, em processadores **amd64** (Intel/AMD) e **arm64** (Apple Silicon e ARM), sem arquivos separados por sistema. Os requisitos que decorrem disso estão na tabela "Requisitos multiplataforma" abaixo. Esta seção registra o que a spec da F15 precisará decidir e cobrir; **nada disto está implementado**.
 
 **Fatos do projeto que condicionam a F15**
 - Python 3.10 ou superior. `requirements.txt` **sem versões fixadas**: `anthropic`, `sentence-transformers`, `numpy`, `python-dotenv`, `psycopg[binary]`, `pymupdf4llm`, `pgvector` (e `fastapi` e `uvicorn` com a F14). A imagem precisa de versões fixadas para ser reproduzível.
 - Banco atual: PostgreSQL 18.6 com pgvector 0.8.7; banco `rag_training_db`, usuário `rag_user`; **senha só no `.env`**, nunca na imagem nem em arquivo versionado.
 - `sql/setup_admin.sql` (usuário, banco e extensão `vector`) exige superusuário e hoje é manual. O `init-db` aplica `sql/NNN_*.sql` em ordem e é idempotente.
-- O `Embedder` escolhe **MPS no Mac, senão CPU** (`src/embeddings.py`). No Docker do Mac não há MPS: roda em **CPU**, mais lento. O código 134 da F04 era do torch com MPS.
+- O `Embedder` escolhe **MPS no Mac, senão CPU** (`src/embeddings.py`); não há ramo para CUDA. **Dentro do contêiner, em qualquer sistema, roda em CPU** (o Docker no Mac não expõe o MPS), mais lento. O código 134 da F04 era do torch com MPS e não se aplica ao contêiner. Usar GPU NVIDIA (Linux e Windows) exigiria suporte a CUDA no `Embedder` e a imagem do torch correspondente: fora do escopo da F15.
 - `BAAI/bge-m3` ocupa cerca de 2,3 GB em disco e 1,4 GB em memória e é baixado do Hugging Face na primeira execução (`HF_TOKEN` opcional). Sem cache persistente, cada contêiner novo baixa de novo.
 - A API (F14) **não tem autenticação**, aceita qualquer caminho em `ingest` e só deve escutar em `127.0.0.1`.
 - O `ingest` lê o disco **do contêiner**: os documentos precisam ser montados por volume, e os caminhos nos comandos são os de dentro do contêiner.
 
 **Arquivos previstos:** `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.env.example` ampliado (valores para o Compose) e seção "Docker" no `README.md`. Se necessário, um script de entrada em `docker/`.
 
-**Decisões propostas (a confirmar na spec)**
+**Decisões de desenho** (as marcadas "decisão do usuário" ou listadas abaixo como decisões já foram tomadas; as demais são propostas a confirmar na spec)
 | Tema | Proposta |
 |---|---|
-| Serviços | `db` (imagem oficial com pgvector sobre PostgreSQL 18, tag a confirmar), `api` (F14) e `cli` (perfil `tools`, usado com `docker compose run --rm cli <comando>` para `init-db`, `ingest`, `eval`). |
+| Serviços | `db` (`pgvector/pgvector`, tag `pg18` a confirmar), `api` (F14) e `cli` (perfil `tools`, usado com `docker compose run --rm cli <comando>` para `init-db`, `ingest`, `eval`), **a `api` e a `cli` na mesma imagem**. |
 | Imagem da aplicação | Dockerfile multi-etapas, usuário sem privilégio, `torch` em versão CPU para reduzir a imagem, versões fixadas, sem `.env`, `.venv`, `.git` nem PDFs reais (`data/amostras/real.pdf` e `grande.pdf`) no contexto (`.dockerignore`). |
 | Volumes | Volume nomeado para os dados do PostgreSQL; volume nomeado para o cache do Hugging Face (`HF_HOME`); **bind mount somente leitura** da pasta de documentos. |
 | Rede | Porta da API publicada como `127.0.0.1:8000:8000` (dentro do contêiner a API escuta em `0.0.0.0`; a restrição fica no mapeamento de porta). Banco **sem** porta publicada (ou só em `127.0.0.1`). `DATABASE_URL` com host `db`. |
@@ -344,11 +346,36 @@ Objetivo: `docker compose up` sobe o banco e a aplicação sem instalar PostgreS
 | Recursos | Documentar o mínimo (≥ 4 GB de memória para o Docker) e que PDFs grandes serão mais lentos em CPU. |
 | Backup | Documentar `pg_dump` e restauração; o volume do banco é a única cópia dos vetores. |
 
+**Requisitos multiplataforma (macOS, Windows e Linux; amd64 e arm64)**
+| Tema | Requisito |
+|---|---|
+| Arquitetura | A imagem da aplicação e a do banco precisam existir para **amd64 e arm64** (imagem multi-arquitetura ou `docker buildx`); confirmar que `torch` (versão CPU), `pymupdf4llm` e `psycopg[binary]` têm pacotes para as duas. Nunca fixar `platform:` no Compose. |
+| Windows | Suporte por **Docker Desktop com WSL 2**. Documentar os comandos também em **PowerShell** (variáveis de ambiente, caminhos). Memória do WSL 2 pode precisar de ajuste (`.wslconfig`) para os ≥ 4 GB. |
+| Fim de linha | Scripts de entrada (`docker/*.sh`) e `setup_admin.sql` precisam de **LF**: acrescentar `.gitattributes` (`*.sh text eol=lf`), pois o Git no Windows converte para CRLF e quebra o `#!/bin/sh` dentro do contêiner. |
+| Caminhos | Os comandos usam os caminhos **de dentro do contêiner** (ex.: `/data/docs`), iguais nos três sistemas. O caminho do computador só aparece no `docker-compose.yml`, por variável (ex.: `DOCS_DIR`), com o exemplo de cada sistema (`/home/ana/docs`, `C:\Users\ana\docs`, `~/docs`). |
+| Volumes e permissões | Preferir **volumes nomeados** para banco e cache. No bind mount de documentos (somente leitura) o usuário sem privilégio do contêiner precisa conseguir ler; no Linux, definir o `uid`/`gid` por variável (`APP_UID`, `APP_GID`) ou documentar o ajuste. Desempenho de bind mount no Windows/Mac é menor: mesmo assim vale para leitura. |
+| Maiúsculas e minúsculas | Linux diferencia `Manual.pdf` de `manual.pdf`; macOS e Windows não. Conferir se algum caminho ou nome de arquivo do projeto depende disso. |
+| Rede | Mapear `127.0.0.1:8000:8000` em todos os sistemas (a restrição de rede da F14 vale igual). Para acessar o PostgreSQL do host, não usar `network_mode: host` (não existe no Docker Desktop). |
+| Compose | Usar a sintaxe do **Docker Compose v2** (`docker compose`, sem hífen) e sem recursos exclusivos de um sistema. Versão mínima do Docker e do Compose documentada no README. |
+| Recursos | ≥ 4 GB de memória para o Docker e cerca de 6 GB de disco (imagem, modelo e banco); em Windows e Mac o limite é configurado no Docker Desktop/WSL 2, em Linux vale a memória do host. |
+| Tempo | CPU sem GPU: o cadastro de PDFs grandes é mais lento em qualquer sistema; registrar o tempo medido de `grande.pdf` em cada sistema testado, sem meta fixa. |
+
 **Fora do escopo da F15:** Kubernetes ou outra orquestração, HTTPS e proxy reverso, GPU no contêiner, CI/CD, publicação em registry, autenticação da API (é a evolução de controle de acesso).
 
-**Pontos em aberto da F15:** tag exata da imagem do PostgreSQL 18 com pgvector; versões a fixar em `requirements.txt`; uso só local ou também em servidor; `cli` e `api` na mesma imagem com comandos diferentes ou imagens separadas; atualização do modelo no volume de cache; como entregar os documentos (bind mount fixo ou configurável por `DOCS_DIR`).
+**Decisões do usuário nos pontos que estavam em aberto da F15** (2026-10-11)
+1. **Uso: só local** nesta fase. API em `127.0.0.1`, banco sem porta publicada. Servidor da equipe (rede, HTTPS, proxy reverso, autenticação) fica para depois da autenticação e do controle de acesso.
+2. **Uma imagem, dois usos:** um só `Dockerfile` e uma só imagem; o serviço `api` roda `python -m src.api` e o serviço `cli` (perfil `tools`) usa a mesma imagem com `docker compose run --rm cli <comando>`.
+3. **Documentos:** variável `DOCS_DIR` no `.env` (pasta do computador), montada **somente leitura** em `/data/docs`; os comandos usam `/data/docs/...` nos três sistemas. A base do Docker **começa vazia** e os documentos são cadastrados de novo, porque a tabela `sources` guarda caminhos e os de um banco local (`/Users/...`) não existem no contêiner. Migrar uma base local para o Docker não faz parte da F15.
+4. **Imagem do banco:** `pgvector/pgvector` oficial com a tag `pg18`. A tag e as arquiteturas **amd64 e arm64 devem ser conferidas no Docker Hub ao escrever a spec**; se não existirem, construir a imagem a partir de `postgres:18` instalando o pgvector. Atenção: nas imagens do PostgreSQL 18 mudou o diretório de dados; conferir o ponto de montagem do volume.
+5. **Versões:** fixar com `==` as 7 bibliotecas diretas do `requirements.txt` (as que funcionam hoje no `.venv`) e a versão do Python da imagem. Dependências indiretas não são travadas. A alteração do `requirements.txt` vale também para quem instala sem Docker.
+6. **Sistemas com suporte oficial** (o roteiro manual roda em cada um): **macOS Apple Silicon**, **Windows 11 com Docker Desktop (WSL 2)** e **Ubuntu LTS 22.04/24.04 (amd64)**. Windows 10, outras distribuições Linux e macOS Intel ficam como "devem funcionar, não testados". **Uma pessoa da equipe por sistema** executa o roteiro e registra na seção 14.
+7. **Modelo de embeddings:** volume nomeado de cache (`HF_HOME`); o modelo é baixado no **primeiro uso** e reaproveitado. Sem modelo dentro da imagem (a troca da F16 não exige rebuild). O primeiro uso precisa de internet; avisar no README. Na F16, a troca de modelo mantém dois modelos em memória: documentar **≥ 6 GB** para essa operação.
 
-**Roteiro manual previsto (a detalhar na spec):** `docker compose build`; `up` com banco vazio; `init-db`; `check`; `ingest` de `data/amostras`; `search` e `ask` com resultados iguais aos da instalação local; `GET /health`; reiniciar e confirmar que banco e modelo persistem (sem novo download); `down` e `up` sem `-v`; a API inacessível de outra máquina; banco sem porta publicada; imagem sem `.env` (`docker history` e `docker run ... env`).
+**Pontos em aberto da F15:** nenhum de desenho. Ficam a conferir na spec: tag `pg18` e arquiteturas da imagem do banco, versões exatas das bibliotecas, pacotes de `torch` (CPU), `pymupdf4llm` e `psycopg[binary]` para amd64 e arm64, e o ponto de montagem do volume do PostgreSQL 18.
+
+**Roteiro manual previsto (a detalhar na spec):** `docker compose build`; `up` com banco vazio; `init-db`; `check`; `ingest` de `data/amostras`; `search` e `ask` com resultados iguais aos da instalação local **e entre os sistemas**; `GET /health`; reiniciar e confirmar que banco e modelo persistem (sem novo download); `down` e `up` sem `-v`; a API inacessível de outra máquina; banco sem porta publicada; imagem sem `.env` (`docker history` e `docker run ... env`).
+
+**Verificação por sistema:** repetir o roteiro completo em **macOS (Apple Silicon), Windows 11 com Docker Desktop (WSL 2) e Linux (amd64)**, e anotar na seção 14 da spec o sistema, a arquitetura, as versões do Docker/Compose e o tempo de cadastro de `grande.pdf`. O mesmo comando (`docker compose up`) deve funcionar sem edição em cada um, trocando só variáveis do `.env` (ex.: `DOCS_DIR`).
 
 **Regressão prevista:** F01 (`check`, `init-db`), F05/F08 (`ingest` e `reindex` com caminhos do contêiner), F06/F07 e F14 (todos os endpoints).
 
@@ -366,20 +393,24 @@ Objetivo: trocar `EMBEDDING_MODEL` de forma segura, revetorizando a base inteira
 
 **Arquivos previstos:** função de revetorização em `src/embeddings.py` ou módulo novo (ex.: `src/reembedding.py`), subcomando da CLI, `repository.py` (leitura dos trechos em lotes e gravação dos vetores novos), migração `sql/00N_*.sql` para dimensão diferente, item no menu (F10) e endpoint na API (F14), se existirem.
 
-**Decisões propostas (a confirmar na spec)**
-- **Comando dedicado**, por exemplo `python -m src.cli reembed --model <novo> [--yes]`. Nunca como efeito de mudar o `.env`.
+**Decisões de desenho** (as marcadas "decisão do usuário" ou listadas abaixo como decisões já foram tomadas; as demais são propostas a confirmar na spec)
+- **Comando dedicado `reembed`** (decisão do usuário): `python -m src.cli reembed --model <novo> [--yes] [--dry-run]`. Sem `--yes` mostra o plano (documentos, trechos, dimensões antiga e nova, tempo estimado) e pede `[s/N]`; sem terminal, recusa. `--dry-run` só valida o modelo e mostra o plano. **Não edita o `.env`**: ao terminar, o banco passa a registrar o modelo novo e a pessoa atualiza `EMBEDDING_MODEL` (e os prefixos); até lá a F04 bloqueia o uso com a mensagem de divergência. Nunca é efeito colateral de mudar o `.env`.
 - **Etapas:** (1) validar o modelo novo (carrega, dimensão, `max_seq_length`, prefixos); (2) mostrar o plano (documentos, trechos, dimensões antiga e nova, tempo estimado) e pedir confirmação (R10, R12 propostas no NEGOCIO); (3) revetorizar a partir de `chunks.content`, em lotes e com progresso; (4) trocar `embedding_model`, `embedding_dim` e o índice **só ao final**; (5) rodar o `eval` com o modelo novo e propor o novo limiar.
-- **Atomicidade e disponibilidade** (decidir uma): **A)** coluna sombra `embedding_new` preenchida em lotes, troca no fim em uma transação; a busca continua com o modelo antigo até lá; custa o dobro de espaço para vetores. **B)** transação única com a base bloqueada para escrita; simples, mas longa e com tabela inteira reescrita. **C)** novo banco ou esquema e troca de `DATABASE_URL`; isola, mas exige reingestão dos textos. **Recomendação a registrar: A.**
-- **Interrupção:** retomável (marca quais trechos já têm o vetor novo) ou recomeça do início; a base **nunca** fica com vetores de dois modelos visíveis para a busca (R13 proposta).
+- **Estratégia A, coluna sombra** (decisão do usuário): cria `embedding_new` (e o índice), preenche em lotes a partir de `chunks.content` enquanto a busca segue com o modelo antigo, e só no fim troca o registro (`app_meta`) e a coluna em **uma transação curta**. Falha ou interrupção deixam a base antiga intacta. Custo: cerca de 20 MB extras para 4.858 trechos (vetores de 1024 dimensões em 4 bytes). As opções B (transação única, sem retomada) e C (novo banco e troca de `DATABASE_URL`) foram descartadas.
+- **Interrupção:** **retomável** (consequência da estratégia A: marca quais trechos já têm o vetor novo e o `reembed` continua dali); a base **nunca** fica com vetores de dois modelos visíveis para a busca (R13 proposta).
 - **Dimensão diferente:** migração idempotente; a dimensão passa a ser lida de `app_meta` em vez da constante `EMBEDDING_DIM`; o `check` compara a coluna com o modelo registrado.
 - **Reversão:** manter o modelo anterior registrado até a conclusão; recomendar `pg_dump` antes (e o documento da F15 descreve o backup).
 - **Qualidade:** comparar hit@k e MRR do modelo novo com o `bge-m3` usando `data/avaliacao/` antes de confirmar; registrar o novo `RELEVANCE_THRESHOLD` e, se necessário, revisar `MAX_CHARS` e `OVERLAP_CHARS` (um `reindex --force` pode ser exigido).
-- **Prefixos:** variáveis opcionais (por exemplo `EMBEDDING_QUERY_PREFIX` e `EMBEDDING_DOC_PREFIX`) ou tabela de modelos conhecidos; a decidir.
-- **Durante a troca:** `ingest` e `reindex` ficam bloqueados (trava global, como a trava por pasta da F08); `search` e `ask` continuam com o modelo antigo na opção A.
+- **Prefixos** (decisão do usuário): variáveis opcionais `EMBEDDING_QUERY_PREFIX` e `EMBEDDING_DOC_PREFIX` no `.env` (vazias por padrão, como hoje com o `bge-m3`). O `reembed` grava os valores em `app_meta` junto do modelo; se divergirem do `.env`, a F04 bloqueia como faz com o nome do modelo, porque prefixo diferente gera vetores não comparáveis. O `Embedder` passa a aplicar `EMBEDDING_QUERY_PREFIX` às perguntas e `EMBEDDING_DOC_PREFIX` aos trechos.
+- **Durante a troca** (decisão do usuário): `search` e `ask` continuam com o modelo antigo; `ingest`, `reindex`, `delete` e outro `reembed` são **recusados** com mensagem clara, por uma trava global na base (como a trava por pasta da F08; some se o processo cair). Isso evita trechos novos sem o vetor novo. Consequência: o modelo antigo (nas consultas) e o novo (no `reembed`) ficam em memória juntos, cerca de 2,8 GB; no Docker, **≥ 6 GB**. Na API (F14), as rotas de alteração respondem `409` com um código próprio (ex.: `reembed_in_progress`).
 
 **Fora do escopo da F16:** modelos esparsos ou multi-vetor (§3), vários modelos ao mesmo tempo, reranking, troca de dimensão sem reprocessar.
 
-**Pontos em aberto da F16:** estratégia A, B ou C; nome e forma do comando; como configurar prefixos por modelo; tempo de indisponibilidade aceitável; efeito sobre a API em execução; espaço em disco necessário; quais modelos serão candidatos.
+**Modelos para validar a F16** (decisão do usuário): `intfloat/multilingual-e5-large` (1024 dimensões, testa a troca sem mudar a dimensão e os prefixos `query: ` e `passage: `) e `intfloat/multilingual-e5-small` (384 dimensões, testa a migração de dimensão e roda leve em CPU). As dimensões vêm do conhecimento do modelo e **devem ser conferidas nos cartões do Hugging Face** ao escrever a spec. Modelos candidatos para uso real são avaliados com o `eval`, depois.
+
+**Decisões do usuário nos pontos que estavam em aberto da F16** (2026-10-11): estratégia A (coluna sombra); comando `reembed --model <novo>`; prefixos por variáveis registradas no banco; consultas continuam e alterações são recusadas durante a troca; modelos de teste e5-large e e5-small. O espaço em disco deixou de ser uma dúvida (≈ 20 MB para a base atual).
+
+**Pontos em aberto da F16:** nenhum de desenho. Ficam a conferir na spec: dimensões e prefixos dos modelos de teste, tempo real da troca em CPU no Docker (medir), o nome do código de erro da API durante a troca e se a migração de dimensão usa a coluna sombra já na nova dimensão (provável) ou uma migração `sql/00N_*.sql` separada.
 
 **Roteiro manual previsto (a detalhar na spec):** troca para modelo de mesma dimensão; troca para outra dimensão; recusa sem confirmação; interrupção no meio e retomada (nenhuma busca mistura modelos); base vazia; `check` coerente antes, durante e depois; `eval` antes e depois, com novo limiar; busca durante a troca; `ingest` bloqueado durante a troca; reversão.
 
