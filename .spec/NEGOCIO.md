@@ -90,12 +90,19 @@ Registradas para planejamento posterior, **não** fazem parte desta fase:
 4. Outros formatos além de TXT, MD e PDF (Word, planilhas).
 5. **Implantação em contêiner (F15, planejada, sem spec):** subir a aplicação e o banco com Docker Compose, para que outra pessoa ou outra máquina rode tudo sem instalar PostgreSQL, pgvector e Python. **Requisito de plataforma:** deve rodar do mesmo jeito em **macOS, Windows e Linux** (processadores Intel/AMD e Apple Silicon/ARM), com o mesmo resultado nas consultas. Os dados (banco e modelo de embeddings) devem sobreviver a reinicializações, e a API, que ainda não tem autenticação, não pode ficar exposta à rede por padrão. Detalhes em ARQUITETURA §15.
 6. **Troca do modelo de embeddings (F16, planejada, sem spec):** hoje o modelo é fixo (`BAAI/bge-m3`) e trocá-lo é bloqueado. A troca passa a ser uma operação explícita, que revetoriza a base inteira. Detalhes em ARQUITETURA §16.
+7. **Vários provedores de LLM (F17, planejada, sem spec):** hoje só o Claude responde às perguntas. A aplicação passa a poder usar **OpenAI (ChatGPT), Gemini, DeepSeek e modelos locais (Ollama)**, além do Claude, escolhidos na configuração. Como cada provedor é um novo destino dos trechos dos documentos, só entram os da **lista de provedores aprovados** (R11 revisada). Detalhes em ARQUITETURA §17.
 
 **Regras de negócio propostas para a troca de modelo** (rascunho; só valem depois de formalizadas na spec da F16):
 - **R12 (proposta).** O modelo de embeddings só é trocado por um pedido explícito, nunca por mudança do `.env`, e **com confirmação** (R10) que mostra o que será refeito (documentos, trechos e tempo estimado).
 - **R13 (proposta).** Durante e depois da troca, **uma consulta nunca mistura vetores de modelos diferentes**: ou usa a base antiga completa, ou a nova completa. Uma troca interrompida não deixa a base pela metade (R9).
 - **R14 (proposta).** Depois da troca, a qualidade é **medida de novo** (F11) e o limiar de relevância é revisto antes de a troca ser considerada concluída, porque outro modelo muda a escala das pontuações.
 - Os arquivos originais **não** precisam ser relidos: os trechos de texto já estão na base e só os vetores são refeitos.
+
+**Regras de negócio propostas para vários provedores de LLM** (rascunho; só valem depois de formalizadas na spec da F17):
+- **R11 (revisão proposta).** Os trechos usados para responder são enviados **apenas a provedores da lista de aprovados**. A lista inicial, **aprovada em 2026-10-11**, é: Claude, OpenAI, Gemini, **DeepSeek** (aprovado pelo usuário, ciente de que os servidores da API ficam na China) e Ollama (local). Cada um só passa a ser **suportado** depois de validado (R16); até lá, ou se for removido da lista, é recusado. Um provedor fora da lista é recusado. Um modelo **local** (Ollama) não envia os documentos para fora da máquina.
+- **R15 (proposta).** Toda resposta indica **qual provedor e modelo** a gerou, na CLI, na API e no `check`.
+- **R16 (proposta).** As regras R1 a R3 valem para **qualquer** provedor (só os documentos, fonte citada, "não encontrei" sem adivinhar). Um provedor só é considerado suportado depois de passar no `eval --answers` (F11), cumprindo a frase padrão, as citações `[n]` e a resposta em português.
+- **R17 (proposta).** Trocar de provedor **não reindexa nada** nem altera a base: os vetores continuam sendo gerados pelo modelo local de embeddings.
 
 ## 10. Pontos em aberto
 
@@ -104,4 +111,5 @@ Registradas para planejamento posterior, **não** fazem parte desta fase:
 - Limites de tamanho de arquivo aceitos.
 - ~~**F15 (contêiner)**~~ **Resolvido (2026-10-11):** uso **só local** nesta fase (servidor da equipe depende de autenticação); sistemas suportados: macOS Apple Silicon, Windows 11 (Docker Desktop com WSL 2) e Ubuntu LTS 22.04/24.04 (amd64), com uma pessoa da equipe testando cada um. Quem guarda o backup do banco continua em aberto (quem roda o Compose).
 - ~~**F16 (troca de modelo)**~~ **Resolvido (2026-10-11):** durante a troca as consultas continuam e as alterações (`ingest`, `reindex`, `delete`) são recusadas; o espaço em disco é irrelevante (≈ 20 MB). Em aberto: qual modelo será adotado de fato (será medido com o `eval`).
+- **F17 (vários provedores de LLM):** ~~o **DeepSeek** entra na lista de aprovados?~~ **Resolvido (2026-10-11):** aprovado, com a ressalva registrada de que os servidores da API ficam na China. Em aberto: qual modelo local será usado no Ollama e em que máquina? Qual o orçamento para validar cada provedor com o `eval --answers` (consome a cota de cada serviço)? Os detalhes técnicos das APIs ficam para a especificação.
 - ~~Se o idioma da resposta deve acompanhar o da pergunta ou ser sempre português.~~ **Resolvido na F07:** a resposta é sempre em português.

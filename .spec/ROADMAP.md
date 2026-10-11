@@ -3,7 +3,7 @@
 Documentos relacionados: [NEGOCIO.md](NEGOCIO.md) (o quê e por quê) e [ARQUITETURA.md](ARQUITETURA.md) (como).
 Cada feature terá sua especificação em `.spec/features/FNN-nome-curto.md` (ex.: `F05-cadastro-de-documento.md`), sempre criada a partir do template [features/_TEMPLATE.md](features/_TEMPLATE.md).
 
-**Status:** roadmap **aprovado**; **F01–F13 verificadas** (M1 a M4 concluídos); **F14 (API REST)** com spec aprovada, ainda não implementada (M5); **F15 (Docker)** e **F16 (troca de embedding)** só planejadas, sem spec (M6). Veja a tabela "Status das features" no fim deste documento.
+**Status:** roadmap **aprovado**; **F01–F13 verificadas** (M1 a M4 concluídos); **F14 (API REST)** com spec aprovada, ainda não implementada (M5); **F15 (Docker)** e **F16 (troca de embedding)** só planejadas, sem spec (M6); **F17 (vários provedores de LLM)** só planejada, sem spec (M7). Veja a tabela "Status das features" no fim deste documento.
 
 ## Como trabalharemos (SDD)
 
@@ -16,7 +16,7 @@ Para cada feature, nesta ordem:
 
 Se a implementação revelar algo novo, a spec é atualizada **antes** do código.
 
-**F15 e F16** estão só registradas na documentação (NEGOCIO e ARQUITETURA §15 e §16): a spec de cada uma só é escrita quando o usuário pedir.
+**F15, F16 e F17** estão só registradas na documentação (NEGOCIO e ARQUITETURA §15, §16 e §17): a spec de cada uma só é escrita quando o usuário pedir.
 
 ## Testes: somente manuais
 
@@ -46,6 +46,7 @@ Em vez de construir cada camada inteira, o primeiro marco entrega o caminho comp
 | F14 | **API REST para execução dos fluxos do RAG** | Um endpoint para cada comando da CLI (`init-db`, `check`, `ingest`, `reindex`, `search`, `ask`, `folders`, `list`, `delete`, `eval`), com request e response em JSON, tarefas assíncronas para as operações longas e **sem autenticação** nesta fase. | R1–R11 (sem regra nova) | F05–F11 |
 | F15 | **Contêineres (Dockerfile e Docker Compose)** | Subir banco (PostgreSQL com pgvector) e aplicação (API e CLI) com `docker compose up`, sem instalar PostgreSQL, pgvector nem Python na máquina, **em macOS, Windows e Linux** (amd64 e arm64). **Só planejada: sem spec.** Requisitos em ARQUITETURA §15. | — | F01, F05–F09; F14 para o serviço `api` |
 | F16 | **Troca do modelo de embeddings** | Trocar `EMBEDDING_MODEL` reindexando a base inteira a partir dos trechos já gravados, com confirmação, base consistente e novo limiar medido. **Só planejada: sem spec.** Requisitos em ARQUITETURA §16. | R10 (confirmação) | F04, F08, F11; F14 opcional |
+| F17 | **Vários provedores de LLM** | Responder com outros modelos além do Claude: **OpenAI (ChatGPT), Gemini, DeepSeek e Ollama (local)**, além do Claude atual. O provedor padrão vem de `LLM_PROVIDER` e `LLM_MODEL` no `.env`, com `--llm` opcional no `ask`. Só provedores da lista de aprovados (R11 revisada). **Só planejada: sem spec.** Requisitos em ARQUITETURA §17. | R1–R3, R11 (revisada); R15–R17 (propostas) | F07, F11; F14 e F15 integram (opcional) |
 
 ### Observações sobre as features
 - **Comandos da CLI nascem junto de cada feature** (por exemplo, `ingest` em F05 e `ask` em F07). F10 reúne tudo no menu e na interface final, sem reescrever a lógica.
@@ -62,6 +63,7 @@ Em vez de construir cada camada inteira, o primeiro marco entrega o caminho comp
 | **M4 — Encerramento** | F12 | Código legado removido e documentação atualizada. |
 | **M5 — API** | F14 | Todas as operações da CLI executáveis por HTTP, com paridade de resultados. |
 | **M6 — Operação e evolução** | F15, F16 | Subir tudo por Docker Compose com dados e modelo persistentes; trocar o modelo de embeddings com a base consistente e a qualidade medida. |
+| **M7 — Múltiplos provedores de LLM** | F17 | Responder com Claude, OpenAI, Gemini, DeepSeek e Ollama, cada um validado com `eval --answers`, sem reindexar a base. |
 
 ## Decisões pendentes que bloqueiam features
 
@@ -71,6 +73,7 @@ Em vez de construir cada camada inteira, o primeiro marco entrega o caminho comp
 | ~~**Acesso simultâneo da equipe** (duas pessoas atualizando a mesma pasta ao mesmo tempo).~~ **Resolvida na F08:** trava por pasta (lock consultivo do PostgreSQL) que recusa a segunda atualização. | F05, F08 | — |
 | ~~**Troca de `EMBEDDING_MODEL`**~~ **Planejada na F16** (sem spec), com as decisões de desenho tomadas em 2026-10-11: estratégia de coluna sombra, comando `reembed --model <novo>`, prefixos por variáveis registradas no banco, consultas liberadas e alterações recusadas durante a troca. Ver ARQUITETURA §16. | F16 | Falta só conferir detalhes na spec (dimensões e prefixos dos modelos de teste, tempo real em CPU). |
 | ~~**Docker/Compose.**~~ **Planejada na F15** (sem spec), com as decisões de desenho tomadas em 2026-10-11: uso só local, uma imagem para API e CLI, documentos por `DOCS_DIR`, imagem `pgvector/pgvector` `pg18`, versões diretas fixadas, macOS Apple Silicon + Windows 11 (WSL 2) + Ubuntu LTS, modelo em volume de cache. Ver ARQUITETURA §15. | F15 | Falta conferir a tag `pg18` e as arquiteturas no Docker Hub ao escrever a spec. |
+| **Vários provedores de LLM.** Decisões de 2026-10-11: escolha fixa no `.env` com `--llm` opcional; provedores da 1ª versão: Claude, OpenAI, Gemini, DeepSeek e Ollama; privacidade por lista de provedores aprovados; **DeepSeek aprovado** na lista inicial. Os detalhes de cada API (URLs, parâmetros, compatibilidade) serão obtidos **durante a especificação**. Em aberto: qual modelo local usar no Ollama e o orçamento do `eval --answers` por provedor. Ver ARQUITETURA §17. | F17 | **Planejada na F17** (sem spec). |
 | ~~**Limiar de relevância e tamanho dos trechos.**~~ **Resolvida na F11:** limiar 0,50 (cosseno) e trechos de 900/110 caracteres. | F11 | Medidos com o corpus de `data/avaliacao/`. |
 | **Limites de tamanho de arquivo e de páginas.** | F05 | Podem ser definidos após medir o tempo real de cadastro em F05. |
 | ~~**Idioma da resposta**~~ **Resolvida na F07:** sempre português. | F07 | — |
@@ -105,3 +108,4 @@ Ordem sugerida, a planejar depois de M4:
 | F14 | Aprovada | Pendente |
 | F15 | Sem spec (planejada) | Pendente |
 | F16 | Sem spec (planejada) | Pendente |
+| F17 | Sem spec (planejada) | Pendente |

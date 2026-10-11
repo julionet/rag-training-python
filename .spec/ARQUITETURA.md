@@ -191,6 +191,7 @@ Mantém o `Generator` e o prompt atuais, com ajustes:
 - Se a recuperação retornar vazio (ou abaixo de um limiar mínimo de relevância: `RELEVANCE_THRESHOLD`, cosseno do melhor trecho, 0,50 por padrão, F11; não vale em `lexical`), responde a frase padrão **sem chamar o LLM**.
 - Fontes citadas com **arquivo e página**, no contexto enviado ao LLM e na saída da CLI.
 - Ler a resposta filtrando blocos `type == "text"`, em vez de `content[0].text`.
+- **Vários provedores de LLM:** hoje só o Claude responde. A troca para outros provedores está planejada na §17 (F17); o prompt e as regras desta seção valem para todos.
 
 ## 8. CLI unificada — `python -m src.cli`
 
@@ -295,6 +296,7 @@ data/                  (manual_colaborador.txt, amostras/, avaliacao/)
 - Perguntas de exemplo do manual (`E-5107`, "posso trabalhar de casa", limite de refeição) retornam o chunk correto em `rrf`.
 - Sem contexto relevante, a resposta é a frase padrão e **nenhuma chamada ao LLM é feita**.
 - Trocar `EMBEDDING_MODEL` sem reindexar gera um aviso claro. *(A troca em si é a F16, §16.)*
+- *(F17, §17)* A resposta funciona com qualquer provedor aprovado, indica qual a gerou, e trocar de provedor não exige reindexar.
 - **Sem testes automatizados:** todos os testes são **manuais**, executados conforme os critérios de aceite de cada feature (ver seção 14).
 
 ## 13. Pontos a confirmar (não assumidos)
@@ -302,7 +304,7 @@ data/                  (manual_colaborador.txt, amostras/, avaliacao/)
 - Limites padrão de tamanho de arquivo/páginas (seção 6.1).
 - Layout real dos PDFs (colunas, tabelas, cabeçalhos e rodapés repetidos): só é possível validar com amostras do usuário. Pode ser necessário remover cabeçalhos e rodapés repetidos.
 - Limiar mínimo de relevância e tamanho final dos chunks: serão definidos com a avaliação da fase 5, não de antemão.
-- **F15 e F16:** os pontos em aberto de cada uma estão no fim das seções 15 e 16.
+- **F15, F16 e F17:** os pontos em aberto de cada uma estão no fim das seções 15, 16 e 17.
 
 Resolvidos: banco `rag_training_db`, usuário `rag_user` (senha só no `.env`); `data/index/` foi removido na F12 (revoga a decisão anterior de mantê-lo); **arquivos duplicados (mesmo `sha256`) são ignorados**; **pgvector 0.8.7** (Homebrew) confirmado instalado, com Postgres 18.6.
 
@@ -415,3 +417,55 @@ Objetivo: trocar `EMBEDDING_MODEL` de forma segura, revetorizando a base inteira
 **Roteiro manual previsto (a detalhar na spec):** troca para modelo de mesma dimensão; troca para outra dimensão; recusa sem confirmação; interrupção no meio e retomada (nenhuma busca mistura modelos); base vazia; `check` coerente antes, durante e depois; `eval` antes e depois, com novo limiar; busca durante a troca; `ingest` bloqueado durante a troca; reversão.
 
 **Regressão prevista:** F04 (bloqueio por divergência, `check`), F05, F08 (`--force`, `reindex`), F06, F07, F11 (`eval`) e, se existir, F14.
+
+## 17. Vários provedores de LLM — F17 (planejada, sem spec)
+
+Objetivo: gerar as respostas do `ask` com outros modelos além do Claude: **OpenAI (ChatGPT), Gemini, DeepSeek e Ollama (modelo local)**. Esta seção registra o que a spec da F17 precisará decidir e cobrir; **nada disto está implementado**.
+
+**Fatos do projeto que condicionam a F17**
+- O acoplamento ao Claude está **em um arquivo**: `src/generation.py` (`Generator`, que usa o SDK `anthropic`, `ANTHROPIC_API_KEY` e `LLM_MODEL`, e traduz os erros do SDK em `GenerationError`). O prompt (`SYSTEM_PROMPT`, `build_context_prompt`) usa marcação em texto puro (`<contexto>`, `<trecho>`, `<pergunta>`) e é neutro quanto ao provedor.
+- Os nomes `ANTHROPIC_API_KEY` e `LLM_MODEL` estão **fixos** em quatro pontos: `src/answer_service.py` (antes da busca), `src/db.py` (`check`), `src/evaluation_service.py` (`--answers`) e `scripts/check_setup.py`. As mensagens da CLI e do menu dizem "Claude".
+- `answer_service.py` detecta a resposta negativa pela frase `NOT_FOUND_ANSWER` **no início** da resposta e extrai as fontes pelas citações `[n]`; essas duas regras dependem de o modelo obedecer ao prompt.
+- A F11 já mede respostas reais (`eval --answers`): é o método para validar cada provedor.
+- Os vetores vêm do modelo local de embeddings (`bge-m3`): **trocar o LLM não exige reindexar nem migrar o banco**.
+
+**Decisões do usuário** (2026-10-11)
+1. **Escolha fixa no `.env`, com override opcional:** `LLM_PROVIDER` e `LLM_MODEL` definem o padrão; o `ask` aceita `--llm` para uma execução.
+2. **Provedores da 1ª versão:** Claude (atual), OpenAI, Gemini, DeepSeek e Ollama.
+3. **Privacidade:** lista de provedores aprovados (R11 revisada, NEGOCIO §5): qualquer outro é recusado; o provedor usado aparece na resposta e no `check`.
+4. **Lista inicial de aprovados:** Claude, OpenAI, Gemini, **DeepSeek** e Ollama. O DeepSeek foi **aprovado pelo usuário**, ciente de que os servidores da API ficam na China.
+5. **Detalhes das APIs:** URLs, nomes de parâmetros, modelos disponíveis e a compatibilidade do Gemini serão **obtidos durante a especificação**, na documentação oficial de cada provedor, e não agora.
+
+**Desenho proposto (a confirmar na spec)**
+| Tema | Proposta |
+|---|---|
+| Interface | Um contrato único de provedor (ex.: `LLMProvider.answer(question, hits, max_tokens) -> GeneratedAnswer`), com o `Generator` escolhendo o adaptador por `LLM_PROVIDER`. `GeneratedAnswer` ganha `provider` e `model`. |
+| Adaptadores | **Anthropic:** o código atual, sem mudança de comportamento. **Compatível com OpenAI:** um adaptador só, com o SDK `openai`, que atende OpenAI, DeepSeek, Gemini (pelo endpoint de compatibilidade do Google, **a confirmar**) e Ollama, mudando `LLM_BASE_URL`, chave e modelo. Alternativa descartada por ora: biblioteca intermediária (LiteLLM), por trazer uma dependência grande. |
+| Variáveis | `LLM_PROVIDER` (`anthropic`, `openai`, `gemini`, `deepseek`, `ollama`), `LLM_MODEL`, `LLM_API_KEY` (ou uma chave por provedor), `LLM_BASE_URL` (com padrão por provedor). `ANTHROPIC_API_KEY` continua valendo para o Claude, por compatibilidade. Ollama não exige chave. |
+| Lista de aprovados | Constante ou variável (`LLM_APPROVED_PROVIDERS`) conferida antes de qualquer chamada; provedor fora da lista dá erro em português e nenhuma chamada sai. |
+| Conferências | As quatro conferências fixas passam a perguntar ao provedor quais variáveis são obrigatórias. O `check` confere só a **presença** das variáveis (sem chamar a API, como hoje) e mostra o provedor e o modelo; `scripts/check_setup.py` faz a chamada real ao provedor configurado. |
+| Erros | Cada adaptador traduz os erros do seu SDK nas mesmas mensagens em português de hoje (chave recusada, modelo indisponível, limite atingido, sem conexão, erro do serviço), citando o nome do provedor em vez de "Claude". |
+| `max_tokens` | `ANSWER_MAX_TOKENS` (600) é traduzido para o nome do parâmetro de cada API (alguns usam outro nome). Modelos de raciocínio gastam parte do limite pensando; a resposta cortada continua sinalizada por `truncated`. A spec decide se o limite sobe ou se há um valor por provedor. |
+| Saída | CLI, menu e API mostram o provedor e o modelo usados (R15 proposta). |
+| `--llm` | `--llm <provedor>[:<modelo>]` no `ask` e no `eval --answers`; o `eval` pode receber vários para comparar. |
+| Docker (F15) | O contêiner acessa o Ollama do computador por `host.docker.internal` (no Linux exige `extra_hosts`/`host-gateway`); chaves por `env_file`, nunca na imagem. |
+| API (F14) | Campo opcional `provider` e `model` no corpo do `/ask`, validados contra a lista de aprovados, e os dois campos na resposta. |
+
+**Arquivos previstos:** `src/generation.py` (refatorado) e, se ficar grande, `src/llm/` (um adaptador por arquivo); `src/config.py`; `src/answer_service.py`; `src/db.py`; `src/evaluation_service.py`; `src/cli.py`; `src/menu.py`; `scripts/check_setup.py`; `requirements.txt` (`openai`, versão fixada); `.env.example`; `README.md`. **Sem migração de banco.**
+
+**Estimativa de impacto:** de 150 a 300 linhas novas ou alteradas, em 7 a 9 arquivos; a maior parte é o `generation.py` e a validação, não a escrita do código. Estimativa sem medição.
+
+**Riscos que a spec precisa tratar**
+- **Obediência ao prompt:** modelos diferentes seguem de forma diferente as regras de citar `[n]`, da frase exata de "não encontrei", de ignorar instruções dentro dos documentos e de responder em português. Cada provedor só é suportado depois de passar no `eval --answers` (R16 proposta); pode haver ajuste do `SYSTEM_PROMPT` por provedor.
+- **Privacidade:** cada provedor é um novo destino dos trechos; o DeepSeek tem os servidores da API na China (risco **aceito pelo usuário**, que o aprovou); o Ollama mantém tudo na máquina. A lista de aprovados é decisão de negócio (NEGOCIO §5 e §10) e pode ser revista.
+- **Custo e chaves:** cada provedor tem preço, limites e uma chave própria; o `eval --answers` consome a cota de cada um.
+- **Qualidade do Ollama:** depende do modelo local e da máquina; um modelo pequeno pode falhar nas regras do prompt. A spec registra qual modelo foi testado e pode marcar um provedor como "funciona, qualidade inferior".
+- **Detalhes de cada API** (URLs, nomes de parâmetros, compatibilidade do Gemini): serão **obtidos durante a especificação**, na documentação oficial; as compatibilidades citadas aqui vêm de conhecimento geral e não foram testadas. O desenho desta seção pode mudar conforme o que a especificação encontrar.
+
+**Fora do escopo da F17:** streaming da resposta, uso de ferramentas (function calling), fallback automático entre provedores, mais de um provedor na mesma pergunta, embeddings por API e RAG com histórico de conversa.
+
+**Pontos em aberto da F17:** ~~se o DeepSeek entra na lista inicial de aprovados~~ (resolvido: aprovado); a obtenção dos detalhes das APIs na especificação; qual modelo local usar no Ollama e em que máquina; orçamento de validação por provedor; valor de `max_tokens` por provedor; ajuste do prompt por provedor; um provedor de LLM por chave única (`LLM_API_KEY`) ou uma variável por provedor; formato exato de `--llm`.
+
+**Roteiro manual previsto (a detalhar na spec):** regressão completa do `ask` com o Claude (F07, mesmas respostas e fontes de antes); `ask` em cada provedor (resposta com fonte `[n]` e página; pergunta fora do assunto com a frase padrão; injeção de instrução no contexto ignorada; pergunta em inglês respondida em português); chave inválida, modelo inexistente, limite excedido e sem rede, com mensagem em português; provedor fora da lista recusado sem chamada; `check` mostrando o provedor e as variáveis; `--llm` e a variável do `.env`; `eval --answers` por provedor, comparando acertos e custo; resposta cortada por `max_tokens`; Ollama dentro do Docker (F15), se existir.
+
+**Regressão prevista:** F07 (`ask`), F11 (`eval --answers`), F10 (menu e modo conversa), F01 (`check`) e, se existirem, F14 (`/ask`) e F15.
