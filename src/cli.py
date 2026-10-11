@@ -5,6 +5,8 @@ import time
 from pathlib import Path
 
 from src import db
+from src.chunking import STRATEGIES
+from src.evaluation import DEFAULT_QUESTIONS
 from src.folder_ingestion import ConfirmUnavailable, Reporter
 
 
@@ -457,6 +459,124 @@ def _table(headers: list[str], rows: list[list[str]], right: set[int] = frozense
         print(line(row))
 
 
+def _percent(value: float) -> str:
+    return f"{round(value * 100)}%"
+
+
+def _print_retrieval_tables(outcome) -> None:
+    ks = outcome.ks
+    headers = ["estratégia", "max_chars", "trechos"] + [f"hit@{k}" for k in ks] + ["MRR"]
+
+    def row(result, method: str) -> list[str]:
+        m = result.metrics[method]
+        return [result.strategy, str(result.max_chars), str(result.chunk_count)] + [
+            _fmt(m.hit_at[k], 2) for k in ks
+        ] + [_fmt(m.mrr, 2)]
+
+    print()
+    print(f"Recuperação (método {outcome.main_method})")
+    _table(headers, [row(r, outcome.main_method) for r in outcome.configs], right=set(range(1, len(headers))))
+
+    best = outcome.best
+    print()
+    print(f"Por método (estratégia {best.strategy}, max_chars {best.max_chars})")
+    headers = ["método"] + [f"hit@{k}" for k in ks] + ["MRR"]
+    rows = [
+        [method] + [_fmt(best.metrics[method].hit_at[k], 2) for k in ks] + [_fmt(best.metrics[method].mrr, 2)]
+        for method in outcome.methods
+    ]
+    _table(headers, rows, right=set(range(1, len(headers))))
+
+
+def _print_threshold(outcome) -> None:
+    best = outcome.best
+    print()
+    if not outcome.threshold_rows:
+        print("Limiar de relevância: sem busca vetorial (semantic ou rrf), não se aplica.")
+        return
+    print(f"Limiar de relevância (cosseno do melhor trecho, {best.strategy} {best.max_chars}, método {outcome.gate_method})")
+    rows = [[_fmt(r.limit, 2), _percent(r.kept), _percent(r.blocked)] for r in outcome.threshold_rows]
+    _table(["limiar", "com resposta que passam", "sem resposta barradas"], rows, right={0, 1, 2})
+    if outcome.suggestion is None:
+        print("Sem proposta: nenhum candidato mantém 95% das perguntas com resposta.")
+    else:
+        print(
+            f"Proposta: {_fmt(outcome.suggestion, 2)} "
+            "(maior valor que mantém ≥ 95% das perguntas com resposta)."
+        )
+
+
+def _print_answers(outcome) -> None:
+    print()
+    from src.answer_service import relevance_threshold
+
+    limit = relevance_threshold()
+    print(f"Respostas (ask real, método {outcome.answers_method}, limiar {_fmt(limit, 2) if limit else 'desligado'})")
+    labels = {"ok": "ok", "fail": "FALHA", "no_base": "sem base"}
+    rows = [[a.question_id, f"{labels[a.status]} ({a.detail})"] for a in outcome.answers]
+    _table(["id", "resultado"], rows)
+    ok = sum(1 for a in outcome.answers if a.status == "ok")
+    calls = sum(1 for a in outcome.answers if a.called_claude)
+    print(f"Resumo: {ok}/{len(outcome.answers)} corretas | chamadas ao Claude: {calls}")
+
+
+def cmd_eval(args: argparse.Namespace) -> int:
+    # imports tardios: o eval não deve pesar nos comandos init-db e check
+    from src.answer_service import AskError
+    from src.embeddings import EmbeddingError
+    from src.evaluation import EvaluationError
+    from src.evaluation_service import run_eval
+    from src.generation import GenerationError
+    from src.loaders import LoaderError
+    from src.search_service import SearchError
+
+    def progress(message: str) -> None:
+        print(message, file=sys.stderr, flush=True)
+
+    try:
+        outcome = run_eval(
+            args.questions, args.strategies, args.max_chars, args.methods, args.top_k, args.answers, progress
+        )
+    except KeyboardInterrupt:
+        print("Avaliação interrompida.", file=sys.stderr)
+        return 1
+    except (EvaluationError, AskError, SearchError, GenerationError, EmbeddingError, LoaderError, db.DbError) as e:
+        print(str(e), file=sys.stderr)
+        return 1
+
+    questions = outcome.eval_set.questions
+    with_answer = sum(1 for q in questions if q.answerable)
+    print(
+        f"Perguntas: {len(questions)} ({with_answer} com resposta, {len(questions) - with_answer} sem) | "
+        f"Documentos: {len(outcome.eval_set.documents)} | top-k {outcome.top_k}"
+    )
+    _print_retrieval_tables(outcome)
+    _print_threshold(outcome)
+    if outcome.answers is not None:
+        _print_answers(outcome)
+    print(f"Tempo: {_fmt(outcome.elapsed, 0)} s")
+    return 0
+
+
+def _csv_of(parse):
+    def convert(value: str) -> list:
+        items = [part.strip() for part in value.split(",") if part.strip()]
+        if not items:
+            raise argparse.ArgumentTypeError("informe ao menos um valor")
+        return [parse(item) for item in items]
+
+    return convert
+
+
+def _choice(options: tuple[str, ...]):
+    def parse(item: str) -> str:
+        if item not in options:
+            raise argparse.ArgumentTypeError(f'"{item}" inválido; use: {", ".join(options)}')
+        return item
+
+    return parse
+
+
 def cmd_folders(args: argparse.Namespace) -> int:
     from src import management_service
 
@@ -581,6 +701,14 @@ def main(argv: list[str] | None = None) -> int:
     ask.add_argument("--fetch-k", type=_positive_int, default=20)
     ask.add_argument("--folder", help="limita a busca a documentos dentro desta pasta")
 
+    evaluation = sub.add_parser("eval", help="mede a qualidade da recuperação e propõe o limiar de relevância")
+    evaluation.add_argument("--questions", default=str(DEFAULT_QUESTIONS), help="arquivo JSON de perguntas")
+    evaluation.add_argument("--strategies", type=_csv_of(_choice(STRATEGIES)), default="structured,recursive,sentence,fixed")
+    evaluation.add_argument("--max-chars", type=_csv_of(_positive_int), default="500,900,1400")
+    evaluation.add_argument("--methods", type=_csv_of(_choice(("rrf", "semantic", "lexical"))), default="rrf,semantic,lexical")
+    evaluation.add_argument("--top-k", type=_positive_int, default=5)
+    evaluation.add_argument("--answers", action="store_true", help="roda também o ask real (consome a cota do Claude)")
+
     sub.add_parser("folders", help="lista as pastas registradas")
     list_cmd = sub.add_parser("list", help="lista os documentos da base")
     list_cmd.add_argument("--folder", help="mostra só os documentos dentro desta pasta")
@@ -600,6 +728,7 @@ def main(argv: list[str] | None = None) -> int:
         "reindex": cmd_reindex,
         "search": cmd_search,
         "ask": cmd_ask,
+        "eval": cmd_eval,
         "folders": cmd_folders,
         "list": cmd_list,
         "delete": cmd_delete,

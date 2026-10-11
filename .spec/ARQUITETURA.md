@@ -187,7 +187,7 @@ Estimativa de ordem de grandeza (a medir na fase 1/3): um PDF de 500 páginas ge
 
 Mantém o `Generator` e o prompt atuais, com ajustes:
 
-- Se a recuperação retornar vazio (ou abaixo de um limiar mínimo de relevância configurável), responde a frase padrão **sem chamar o LLM**.
+- Se a recuperação retornar vazio (ou abaixo de um limiar mínimo de relevância: `RELEVANCE_THRESHOLD`, cosseno do melhor trecho, 0,50 por padrão, F11; não vale em `lexical`), responde a frase padrão **sem chamar o LLM**.
 - Fontes citadas com **arquivo e página**, no contexto enviado ao LLM e na saída da CLI.
 - Ler a resposta filtrando blocos `type == "text"`, em vez de `content[0].text`.
 
@@ -203,6 +203,7 @@ Mantém o `Generator` e o prompt atuais, com ajustes:
 | `folders` | **F09 (implementado):** lista pastas registradas, nº de documentos e data da última indexação. |
 | `list [--folder <pasta>]` | **F09 (implementado):** lista documentos, status e quantidade de chunks. |
 | `delete <arquivo\|pasta>` | **F09 (implementado, `src/management_service.py`):** remove o documento (ou todos os da pasta) e seus chunks. Pede confirmação. |
+| `eval [--questions …] [--strategies …] [--max-chars …] [--methods …] [--top-k N] [--answers]` | **F11 (implementado, `src/evaluation.py` e `src/evaluation_service.py`):** mede hit rate@k e MRR por estratégia e tamanho de trecho em tabelas temporárias (sem tocar na base real), compara métodos e propõe o limiar de relevância; `--answers` roda o `ask` real nas perguntas de `data/avaliacao/perguntas.json`. |
 | `check` | Verifica variáveis do `.env`, conexão, extensão, tabelas e índices (F01). A verificação dos embeddings (F04) compara o `EMBEDDING_MODEL` do `.env` com o registrado em `app_meta` e a dimensão, sem carregar o modelo; a do Claude (F07) confere só a presença de `ANTHROPIC_API_KEY` e `LLM_MODEL`, sem chamar a API. |
 | `menu` (padrão sem argumentos) | **F10 (implementado, `src/menu.py`):** menu interativo (abaixo) quando há terminal; sem terminal, mostra a ajuda. |
 

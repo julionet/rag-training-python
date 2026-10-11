@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 from src import config
 from src.generation import NOT_FOUND_ANSWER
-from src.retrieval import FETCH_K, TOP_K, SearchHit
+from src.retrieval import FETCH_K, TOP_K, SearchHit, passes_relevance
 from src.search_service import EmbedderSource, SearchOutcome, run_search
 
 
@@ -40,6 +40,20 @@ def is_not_found(text: str) -> bool:
     return _normalize(text).startswith(_normalize(NOT_FOUND_ANSWER))  # o Claude pode explicar depois da frase
 
 
+def relevance_threshold() -> float | None:
+    """`RELEVANCE_THRESHOLD` como número; vazio ou ausente = sem limiar (F11)."""
+    raw = (config.RELEVANCE_THRESHOLD or "").strip()
+    if not raw:
+        return None
+    try:
+        value = float(raw.replace(",", "."))
+    except ValueError:
+        value = -1.0
+    if not 0 <= value <= 1:
+        raise AskError("RELEVANCE_THRESHOLD inválida: use um número entre 0 e 1 (ex.: 0.45) ou deixe vazia.")
+    return value
+
+
 def run_ask(
     text: str,
     method: str = "rrf",
@@ -56,11 +70,14 @@ def run_ask(
         if not getattr(config, name):
             raise AskError(f"{name} não definida. Copie .env.example para .env e preencha.")
 
+    threshold = relevance_threshold()  # valor inválido falha antes da busca
     search = run_search(text, method, top_k, fetch_k, folder, embedder_source)
     if search.status != "ok":
         return AskOutcome(search)
     if not search.hits:
         return AskOutcome(search, NOT_FOUND_ANSWER)  # T3: sem chamar o Claude
+    if not passes_relevance(search.hits, method, threshold):
+        return AskOutcome(search, NOT_FOUND_ANSWER)  # F11: nenhum trecho chega ao limiar, sem chamar o Claude
 
     from src.generation import Generator  # importa o SDK só quando vai chamar o Claude
 

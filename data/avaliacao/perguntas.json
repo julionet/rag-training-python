@@ -1,0 +1,266 @@
+{
+  "documentos": [
+    "data/manual_colaborador.txt",
+    "data/amostras/guia.md",
+    "data/amostras/remote_policy.md",
+    "data/avaliacao/politica_viagens.md",
+    "data/avaliacao/guia_ti_vpn.md",
+    "data/avaliacao/beneficios.md",
+    "data/avaliacao/security_handbook.md",
+    "data/avaliacao/onboarding_en.md"
+  ],
+  "perguntas": [
+    {
+      "id": "q01",
+      "pergunta": "posso trabalhar de casa?",
+      "idioma": "pt",
+      "esperado": [
+        {
+          "arquivo": "manual_colaborador.txt",
+          "texto": "modelo híbrido",
+          "pagina": 1
+        }
+      ]
+    },
+    {
+      "id": "q02",
+      "pergunta": "o que significa o erro E-5107?",
+      "idioma": "pt",
+      "esperado": [
+        {
+          "arquivo": "manual_colaborador.txt",
+          "texto": "certificado do notebook expirou",
+          "pagina": 1
+        }
+      ]
+    },
+    {
+      "id": "q03",
+      "pergunta": "qual o limite diário de refeição em viagem?",
+      "idioma": "pt",
+      "esperado": [
+        {
+          "arquivo": "manual_colaborador.txt",
+          "texto": "limite diário de R$ 120,00",
+          "pagina": 1
+        }
+      ]
+    },
+    {
+      "id": "q04",
+      "pergunta": "quanto tempo antes devo solicitar uma viagem internacional?",
+      "idioma": "pt",
+      "esperado": [
+        {
+          "arquivo": "politica_viagens.md",
+          "texto": "20 dias corridos de antecedência",
+          "pagina": 1
+        }
+      ]
+    },
+    {
+      "id": "q05",
+      "pergunta": "quanto a empresa paga por quilômetro rodado com carro próprio?",
+      "idioma": "pt",
+      "esperado": [
+        {
+          "arquivo": "politica_viagens.md",
+          "texto": "R$ 1,15 por quilômetro",
+          "pagina": 1
+        }
+      ]
+    },
+    {
+      "id": "q06",
+      "pergunta": "qual a diária para viagens à Europa?",
+      "idioma": "pt",
+      "esperado": [
+        {
+          "arquivo": "politica_viagens.md",
+          "texto": "Europa | € 130",
+          "pagina": 1
+        }
+      ]
+    },
+    {
+      "id": "q07",
+      "pergunta": "o que fazer se aparecer o erro V-2315 na VPN?",
+      "idioma": "pt",
+      "esperado": [
+        {
+          "arquivo": "guia_ti_vpn.md",
+          "texto": "no máximo 2 dispositivos",
+          "pagina": 1
+        }
+      ]
+    },
+    {
+      "id": "q08",
+      "pergunta": "se eu trocar de celular, quanto tempo leva para redefinir o segundo fator?",
+      "idioma": "pt",
+      "esperado": [
+        {
+          "arquivo": "guia_ti_vpn.md",
+          "texto": "leva até 48 horas",
+          "pagina": 1
+        }
+      ]
+    },
+    {
+      "id": "q09",
+      "pergunta": "até quando posso recuperar um arquivo do backup?",
+      "idioma": "pt",
+      "esperado": [
+        {
+          "arquivo": "guia_ti_vpn.md",
+          "texto": "mantido por 30 dias",
+          "pagina": 1
+        }
+      ]
+    },
+    {
+      "id": "q10",
+      "pergunta": "qual o valor do auxílio-creche?",
+      "idioma": "pt",
+      "esperado": [
+        {
+          "arquivo": "beneficios.md",
+          "texto": "R$ 600,00 por filho",
+          "pagina": 1
+        }
+      ]
+    },
+    {
+      "id": "q11",
+      "pergunta": "quantos dias de licença-paternidade eu tenho?",
+      "idioma": "pt",
+      "esperado": [
+        {
+          "arquivo": "beneficios.md",
+          "texto": "Licença-paternidade | 20 dias",
+          "pagina": 1
+        }
+      ]
+    },
+    {
+      "id": "q12",
+      "pergunta": "a empresa contribui para a previdência privada?",
+      "idioma": "pt",
+      "esperado": [
+        {
+          "arquivo": "beneficios.md",
+          "texto": "até o limite de 4% do salário",
+          "pagina": 1
+        }
+      ]
+    },
+    {
+      "id": "q13",
+      "pergunta": "how long do I have to report a suspicious email?",
+      "idioma": "en",
+      "esperado": [
+        {
+          "arquivo": "security_handbook.md",
+          "texto": "within 1 hour",
+          "pagina": 1
+        }
+      ]
+    },
+    {
+      "id": "q14",
+      "pergunta": "what is the minimum password length?",
+      "idioma": "en",
+      "esperado": [
+        {
+          "arquivo": "security_handbook.md",
+          "texto": "at least 14 characters",
+          "pagina": 1
+        }
+      ]
+    },
+    {
+      "id": "q15",
+      "pergunta": "how fast does security respond to a confirmed data leak?",
+      "idioma": "en",
+      "esperado": [
+        {
+          "arquivo": "security_handbook.md",
+          "texto": "Confirmed data leak or production system compromised",
+          "pagina": 1
+        }
+      ]
+    },
+    {
+      "id": "q16",
+      "pergunta": "how long does the buddy program last?",
+      "idioma": "en",
+      "esperado": [
+        {
+          "arquivo": "onboarding_en.md",
+          "texto": "The buddy program lasts 90 days",
+          "pagina": 1
+        }
+      ]
+    },
+    {
+      "id": "q17",
+      "pergunta": "quantos dias de atestado posso tirar sem comprovante médico?",
+      "idioma": "pt",
+      "esperado": [
+        {
+          "arquivo": "onboarding_en.md",
+          "texto": "up to 3 days per year",
+          "pagina": 1
+        }
+      ]
+    },
+    {
+      "id": "q18",
+      "pergunta": "a empresa reembolsa curso de inglês?",
+      "idioma": "pt",
+      "esperado": [
+        {
+          "arquivo": "beneficios.md",
+          "texto": "cursos de graduação, pós-graduação e idiomas",
+          "pagina": 1
+        }
+      ]
+    },
+    {
+      "id": "q19",
+      "pergunta": "qual a capital da França?",
+      "idioma": "pt",
+      "esperado": []
+    },
+    {
+      "id": "q20",
+      "pergunta": "quanto ganha o presidente da Acme Tech?",
+      "idioma": "pt",
+      "esperado": []
+    },
+    {
+      "id": "q21",
+      "pergunta": "how do I bake a chocolate cake?",
+      "idioma": "en",
+      "esperado": []
+    },
+    {
+      "id": "q22",
+      "pergunta": "a empresa oferece auxílio-academia?",
+      "idioma": "pt",
+      "esperado": []
+    },
+    {
+      "id": "q23",
+      "pergunta": "does Acme Tech offer a stock option plan?",
+      "idioma": "en",
+      "esperado": []
+    },
+    {
+      "id": "q24",
+      "pergunta": "como peço um aumento salarial?",
+      "idioma": "pt",
+      "esperado": []
+    }
+  ]
+}

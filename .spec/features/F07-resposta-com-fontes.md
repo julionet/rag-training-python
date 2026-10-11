@@ -25,7 +25,7 @@ A pessoa faz uma pergunta em linguagem natural e recebe uma **resposta direta, b
 - `check` passa a conferir `ANTHROPIC_API_KEY` e `LLM_MODEL` (só a presença; sem chamar a API).
 
 **Não inclui** (fica para outra feature ou fora de escopo)
-- Limiar mínimo de relevância (F11 mede e define; ver seção 11).
+- Limiar mínimo de relevância (definido e aplicado na F11: `RELEVANCE_THRESHOLD`, 0,50).
 - Resposta em inglês ou no idioma da pergunta (decisão: sempre português).
 - Menu interativo e modo conversa (F10); histórico de conversas (fora de escopo, NEGOCIO §8).
 - Resposta em fluxo (streaming), reordenação (rerank) e reformulação da pergunta.
@@ -153,7 +153,7 @@ Sem variáveis novas; passam a ser **exigidas** pelo `ask` as já existentes no 
 | `LLM_MODEL` | (obrigatória no `ask`) | `.env` |
 | `max_tokens` da resposta | 600 | Constante em `src/generation.py` |
 | `top_k` / `fetch_k` | 5 / 20 | Herdados da F06 (`src/retrieval.py`; `--top-k`, `--fetch-k`) |
-| Limiar mínimo de relevância | Não existe nesta feature | F11 |
+| Limiar mínimo de relevância | Não existe nesta feature; **passou a existir na F11** (`RELEVANCE_THRESHOLD`) | F11 |
 
 ## 8. Dependências externas
 - Nenhum pacote novo (`anthropic` já está em `requirements.txt`).

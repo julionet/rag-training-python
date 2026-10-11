@@ -63,6 +63,7 @@ Em vez de construir cada camada inteira, o primeiro marco entrega o caminho comp
 | ~~**Busca por palavras em português e inglês.**~~ **Resolvida na F06:** duas colunas (`tsv` português e `tsv_en` inglês), título da seção com peso menor e palavras vazias dos dois idiomas descartadas da pergunta. | F06 | Verificar com documentos nos dois idiomas (roteiro da F06). |
 | ~~**Acesso simultâneo da equipe** (duas pessoas atualizando a mesma pasta ao mesmo tempo).~~ **Resolvida na F08:** trava por pasta (lock consultivo do PostgreSQL) que recusa a segunda atualização. | F05, F08 | — |
 | **Troca de `EMBEDDING_MODEL`** (reindexar a base inteira com outro modelo; hoje a F04 só bloqueia e manda "reindexar"). | Futura | Nenhuma feature planejada a implementa; ver F08, seção 11. |
+| ~~**Limiar de relevância e tamanho dos trechos.**~~ **Resolvida na F11:** limiar 0,50 (cosseno) e trechos de 900/110 caracteres. | F11 | Medidos com o corpus de `data/avaliacao/`. |
 | **Limites de tamanho de arquivo e de páginas.** | F05 | Podem ser definidos após medir o tempo real de cadastro em F05. |
 | ~~**Idioma da resposta**~~ **Resolvida na F07:** sempre português. | F07 | — |
 | **Layout real dos PDFs** (colunas, tabelas, cabeçalhos repetidos). | F02, F03 | Exige amostras de PDFs reais. |
@@ -90,4 +91,5 @@ Ordem sugerida, a planejar depois de M4:
 | F08 | Aprovada | Verificada (2026-10-09) |
 | F09 | Aprovada | Verificada (2026-10-10) |
 | F10 | Aprovada | Verificada (2026-10-10) |
-| F11, F12 | Pendente | Pendente |
+| F11 | Aprovada | Verificada (2026-10-10) |
+| F12 | Pendente | Pendente |

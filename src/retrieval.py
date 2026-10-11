@@ -138,3 +138,13 @@ def search(
         raise DbError("Tabelas ausentes. Execute init-db.") from None
     return [SearchHit(*row[:8], semantic_rank=row[8], semantic_score=row[9], lexical_rank=row[10], lexical_score=row[11])
             for row in rows]
+
+
+def passes_relevance(hits: list[SearchHit], method: str, threshold: float | None) -> bool:
+    """Há algum trecho com similaridade de cosseno ≥ limiar? Base do limiar da F11 (T7, seção 6.1).
+
+    Só `semantic` e `rrf` têm similaridade; em `lexical` ou sem limiar, sempre passa.
+    """
+    if method == "lexical" or not threshold:
+        return True
+    return any(h.semantic_score is not None and h.semantic_score >= threshold for h in hits)
