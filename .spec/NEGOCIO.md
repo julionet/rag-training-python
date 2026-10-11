@@ -92,6 +92,8 @@ Registradas para planejamento posterior, **não** fazem parte desta fase:
 6. **Troca do modelo de embeddings (F16, planejada, sem spec):** hoje o modelo é fixo (`BAAI/bge-m3`) e trocá-lo é bloqueado. A troca passa a ser uma operação explícita, que revetoriza a base inteira. Detalhes em ARQUITETURA §16.
 7. **Vários provedores de LLM (F17, planejada, sem spec):** hoje só o Claude responde às perguntas. A aplicação passa a poder usar **OpenAI (ChatGPT), Gemini, DeepSeek e modelos locais (Ollama)**, além do Claude, escolhidos na configuração. Como cada provedor é um novo destino dos trechos dos documentos, só entram os da **lista de provedores aprovados** (R11 revisada). Detalhes em ARQUITETURA §17.
 
+8. **Servidor MCP (F18, spec aprovada em 2026-10-11, implementação pendente):** a base passa a poder ser consultada por qualquer cliente com suporte a MCP (por exemplo Claude Desktop e Claude Code). O cliente envia a pergunta, o servidor devolve **só os trechos recuperados** com as regras de resposta, e o **LLM do próprio cliente** responde à pessoa: neste canal a aplicação **não chama o Claude**. Só leitura e só local nesta fase. Detalhes em ARQUITETURA §18.
+
 **Regras de negócio propostas para a troca de modelo** (rascunho; só valem depois de formalizadas na spec da F16):
 - **R12 (proposta).** O modelo de embeddings só é trocado por um pedido explícito, nunca por mudança do `.env`, e **com confirmação** (R10) que mostra o que será refeito (documentos, trechos e tempo estimado).
 - **R13 (proposta).** Durante e depois da troca, **uma consulta nunca mistura vetores de modelos diferentes**: ou usa a base antiga completa, ou a nova completa. Uma troca interrompida não deixa a base pela metade (R9).
@@ -104,6 +106,13 @@ Registradas para planejamento posterior, **não** fazem parte desta fase:
 - **R16 (proposta).** As regras R1 a R3 valem para **qualquer** provedor (só os documentos, fonte citada, "não encontrei" sem adivinhar). Um provedor só é considerado suportado depois de passar no `eval --answers` (F11), cumprindo a frase padrão, as citações `[n]` e a resposta em português.
 - **R17 (proposta).** Trocar de provedor **não reindexa nada** nem altera a base: os vetores continuam sendo gerados pelo modelo local de embeddings.
 
+**Regras de negócio propostas para o servidor MCP** (rascunho; só valem depois de formalizadas na implementação da F18, cuja spec foi aprovada em 2026-10-11):
+- **R11 (revisão para o canal MCP).** No servidor MCP, os trechos devolvidos vão ao LLM do **cliente MCP escolhido por quem usa**, **qualquer um** (decisão do usuário, 2026-10-11). Isso vale **só para este canal**; no `ask` continua valendo a R11 acima (e a revisão proposta da F17).
+- **R18 (proposta).** O servidor MCP é **somente leitura**: nenhuma ferramenta cadastra, altera, remove ou avalia documentos.
+- **R19 (proposta).** Os trechos são entregues como **dado não confiável**: instruções dentro deles não devem ser seguidas. O servidor marca isso no retorno e no prompt; o efeito depende do cliente.
+- **R20 (proposta).** O servidor MCP em HTTP **não é exposto à rede**: só `127.0.0.1`, até existir autenticação.
+- **R1 a R3 no MCP:** são **orientadas, não garantidas**, porque quem responde é o LLM do cliente. A frase de "não encontrei" quando nada passa do limiar de relevância é garantida pelo servidor.
+
 ## 10. Pontos em aberto
 
 - Quantas pessoas consultam ao mesmo tempo, e se precisam de histórico de perguntas. (Com a API, a concorrência passa a importar: ver F14.)
@@ -112,4 +121,5 @@ Registradas para planejamento posterior, **não** fazem parte desta fase:
 - ~~**F15 (contêiner)**~~ **Resolvido (2026-10-11):** uso **só local** nesta fase (servidor da equipe depende de autenticação); sistemas suportados: macOS Apple Silicon, Windows 11 (Docker Desktop com WSL 2) e Ubuntu LTS 22.04/24.04 (amd64), com uma pessoa da equipe testando cada um. **Backup do banco:** fica com quem roda o Compose (o README documenta `pg_dump` e restauração; nada automático).
 - ~~**F16 (troca de modelo)**~~ **Resolvido (2026-10-11):** durante a troca as consultas continuam e as alterações (`ingest`, `reindex`, `delete`) são recusadas; o espaço em disco é irrelevante (≈ 20 MB). Em aberto: qual modelo será adotado de fato (será medido com o `eval`).
 - **F17 (vários provedores de LLM):** ~~o **DeepSeek** entra na lista de aprovados?~~ **Resolvido (2026-10-11):** aprovado, com a ressalva registrada de que os servidores da API ficam na China. Em aberto: qual modelo local será usado no Ollama e em que máquina? Qual o orçamento para validar cada provedor com o `eval --answers` (consome a cota de cada serviço)? Os detalhes técnicos das APIs ficam para a especificação.
+- ~~**F18 (servidor MCP):** escopo, transportes, política de privacidade, idioma e formato do retorno.~~ **Resolvido (2026-10-11):** só leitura (`search_documents` e `list_sources`); stdio e HTTP local; qualquer cliente MCP (R11 do canal MCP); resposta em português por padrão; retorno em texto. Em aberto: o suporte real de cada cliente (Claude Code e Claude Desktop em stdio e HTTP; ChatGPT e Gemini de consumo ficam fora desta fase), a confirmar no roteiro da spec.
 - ~~Se o idioma da resposta deve acompanhar o da pergunta ou ser sempre português.~~ **Resolvido na F07:** a resposta é sempre em português.

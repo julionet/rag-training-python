@@ -186,6 +186,8 @@ Estimativa de ordem de grandeza (a medir na fase 1/3): um PDF de 500 páginas ge
 
 ## 7. Geração
 
+> **F18:** no servidor MCP (§18) a geração **não é usada**: quem responde é o LLM do cliente MCP. O `SYSTEM_PROMPT` e o formato do contexto passam a viver em `src/prompts.py`, compartilhados com o `ask`, sem mudar o texto.
+
 Mantém o `Generator` e o prompt atuais, com ajustes:
 
 - Se a recuperação retornar vazio (ou abaixo de um limiar mínimo de relevância: `RELEVANCE_THRESHOLD`, cosseno do melhor trecho, 0,50 por padrão, F11; não vale em `lexical`), responde a frase padrão **sem chamar o LLM**.
@@ -254,13 +256,18 @@ DATABASE_URL=postgresql://rag_user:<SENHA>@localhost:5432/rag_training_db
 RELEVANCE_THRESHOLD=0.50
 API_HOST=127.0.0.1   # F14: endereço da API; só 127.0.0.1 por padrão
 API_PORT=8000        # F14
+MCP_DESCRIPTION="..."        # F18: assuntos da base, para o cliente MCP decidir chamar (modelo no .env.example)
+MCP_SYSTEM_PROMPT=           # F18: opcional, substitui o prompt padrão só no MCP (aceita \n)
+MCP_SYSTEM_PROMPT_FILE=      # F18: opcional, arquivo com o prompt (prevalece sobre MCP_SYSTEM_PROMPT)
+MCP_HOST=127.0.0.1           # F18: só 127.0.0.1
+MCP_PORT=8100                # F18
 ```
 
 Banco: `rag_training_db`; usuário: `rag_user`. A **senha fica só no `.env`** (que está no `.gitignore`), nunca neste arquivo nem no `.env.example`, que usa o placeholder `<SENHA>`.
 
 (O `.env.example` já usa `LLM_MODEL`; a variável antiga `MODEL` foi corrigida.)
 
-Adicionar a `requirements.txt`, cada pacote junto da feature que o usa: `psycopg[binary]` (F01), `psycopg_pool` e `pgvector` (F05/F06) e `pymupdf4llm` (F02). `rank-bm25` foi removido na F12. A F14 acrescenta `fastapi` e `uvicorn` (o `pydantic` vem junto).
+Adicionar a `requirements.txt`, cada pacote junto da feature que o usa: `psycopg[binary]` (F01), `psycopg_pool` e `pgvector` (F05/F06) e `pymupdf4llm` (F02). `rank-bm25` foi removido na F12. A F14 acrescenta `fastapi` e `uvicorn` (o `pydantic` vem junto). A F18 acrescenta `mcp==2.3.0` (SDK oficial do MCP).
 
 ## 10. Estrutura alvo
 
@@ -271,6 +278,8 @@ src/
   db.py  repository.py  ingestion.py  folder_ingestion.py  retrieval.py  search_service.py  answer_service.py
   generation.py  management_service.py  menu.py  evaluation.py  evaluation_service.py  cli.py
   api/                 (F14: __init__.py  __main__.py  routes.py  schemas.py  jobs.py  errors.py)
+  prompts.py           (F18: SYSTEM_PROMPT, NOT_FOUND_ANSWER e formato do contexto, compartilhados com o ask)
+  mcp_server/          (F18: __init__.py  __main__.py  tools.py  prompts.py)
 sql/setup_admin.sql    (preparação manual, uma vez: usuário, banco e extensão; exige superusuário)
 sql/001_init.sql  002_file_type_md.sql  003_busca_textual.sql
 Dockerfile  docker-compose.yml  .dockerignore  .gitattributes  docker/init-db.sh   (F15)
@@ -302,6 +311,7 @@ data/                  (manual_colaborador.txt, amostras/, avaliacao/)
 - Sem contexto relevante, a resposta é a frase padrão e **nenhuma chamada ao LLM é feita**.
 - Trocar `EMBEDDING_MODEL` sem reindexar gera um aviso claro. *(A troca em si é a F16, §16.)*
 - *(F17, §17)* A resposta funciona com qualquer provedor aprovado, indica qual a gerou, e trocar de provedor não exige reindexar.
+- *(F18, §18)* Um cliente MCP recebe só os trechos (sem chamada ao Claude), com fonte e página; sem trecho relevante recebe a frase de "não encontrei"; o servidor não oferece nenhuma ferramenta que escreva ou apague, e o HTTP só escuta em `127.0.0.1`.
 - **Sem testes automatizados:** todos os testes são **manuais**, executados conforme os critérios de aceite de cada feature (ver seção 14).
 
 ## 13. Pontos a confirmar (não assumidos)
@@ -309,7 +319,7 @@ data/                  (manual_colaborador.txt, amostras/, avaliacao/)
 - Limites padrão de tamanho de arquivo/páginas (seção 6.1).
 - Layout real dos PDFs (colunas, tabelas, cabeçalhos e rodapés repetidos): só é possível validar com amostras do usuário. Pode ser necessário remover cabeçalhos e rodapés repetidos.
 - Limiar mínimo de relevância e tamanho final dos chunks: serão definidos com a avaliação da fase 5, não de antemão.
-- **F15, F16 e F17:** os pontos em aberto de cada uma estão no fim das seções 15, 16 e 17.
+- **F15, F16, F17 e F18:** os pontos em aberto de cada uma estão no fim das seções 15, 16, 17 e 18 (e nas specs).
 
 Resolvidos: banco `rag_training_db`, usuário `rag_user` (senha só no `.env`); `data/index/` foi removido na F12 (revoga a decisão anterior de mantê-lo); **arquivos duplicados (mesmo `sha256`) são ignorados**; **pgvector 0.8.7** (Homebrew) confirmado instalado, com Postgres 18.6.
 
@@ -383,6 +393,8 @@ Objetivo: `docker compose up` sobe o banco e a aplicação sem instalar PostgreS
 **Roteiro manual previsto (a detalhar na spec):** `docker compose build`; `up` com banco vazio; `init-db`; `check`; `ingest` de `data/amostras`; `search` e `ask` com resultados iguais aos da instalação local **e entre os sistemas**; `GET /health`; reiniciar e confirmar que banco e modelo persistem (sem novo download); `down` e `up` sem `-v`; a API inacessível de outra máquina; banco sem porta publicada; imagem sem `.env` (`docker history` e `docker run ... env`).
 
 **Verificação por sistema:** repetir o roteiro completo em **macOS (Apple Silicon), Windows 11 com Docker Desktop (WSL 2) e Linux (amd64)**, e anotar na seção 14 da spec o sistema, a arquitetura, as versões do Docker/Compose e o tempo de cadastro de `grande.pdf`. O mesmo comando (`docker compose up`) deve funcionar sem edição em cada um, trocando só variáveis do `.env` (ex.: `DOCS_DIR`).
+
+**F18 (servidor MCP):** acrescenta o serviço `mcp` (mesma imagem), com `python -m src.mcp_server --transport http`, `MCP_HOST=0.0.0.0` e `MCP_PORT=8100` **dentro** do contêiner, porta publicada só em `127.0.0.1:${MCP_PORT:-8100}`, healthcheck em `GET /health` e `depends_on` o `db` saudável. O stdio no Docker usa o serviço `cli`. Ver §18.
 
 **Regressão prevista:** F01 (`check`, `init-db`), F05/F08 (`ingest` e `reindex` com caminhos do contêiner), F06/F07 e F14 (todos os endpoints).
 
@@ -474,3 +486,30 @@ Objetivo: gerar as respostas do `ask` com outros modelos além do Claude: **Open
 **Roteiro manual previsto (a detalhar na spec):** regressão completa do `ask` com o Claude (F07, mesmas respostas e fontes de antes); `ask` em cada provedor (resposta com fonte `[n]` e página; pergunta fora do assunto com a frase padrão; injeção de instrução no contexto ignorada; pergunta em inglês respondida em português); chave inválida, modelo inexistente, limite excedido e sem rede, com mensagem em português; provedor fora da lista recusado sem chamada; `check` mostrando o provedor e as variáveis; `--llm` e a variável do `.env`; `eval --answers` por provedor, comparando acertos e custo; resposta cortada por `max_tokens`; Ollama dentro do Docker (F15), se existir.
 
 **Regressão prevista:** F07 (`ask`), F11 (`eval --answers`), F10 (menu e modo conversa), F01 (`check`) e, se existirem, F14 (`/ask`) e F15.
+
+## 18. Servidor MCP — F18 (spec aprovada em 2026-10-11, implementação pendente)
+
+Resumo; o desenho detalhado e o roteiro estão em [features/F18-servidor-mcp.md](features/F18-servidor-mcp.md) (em caso de divergência, vale a spec).
+
+**Ideia:** o RAG vira um servidor MCP **somente leitura**. O cliente MCP (Claude Desktop, Claude Code ou outro) chama a busca, recebe só os trechos e responde com o **LLM dele**. O RAG **não chama o Claude** nesse fluxo: `answer_service` e `Generator` não são usados.
+
+| Tema | Decisão |
+|---|---|
+| Ferramentas | `search_documents(query, top_k=5, folder=None)` e `list_sources()`, com `readOnlyHint`. Sem `ask`, `ingest`, `reindex`, `delete`, `init-db` e `eval`. |
+| Busca | `run_search` (F06) com método `rrf` fixo, `top_k` de 1 a 10 e o limiar da F11 (`relevance_threshold` e `passes_relevance`). |
+| Retorno | **Texto** no formato `<contexto><trecho id arquivo caminho pagina secao>` da F07, com um bloco `<instrucoes>` curto. Sem trechos relevantes: a frase exata de "não encontrei". (Medido em 2026-10-11: cerca de 21% menos caracteres que JSON.) |
+| Prompt de sistema | O MCP não tem canal de prompt de sistema do servidor; o conteúdo vai em camadas: descrição da ferramenta, campo `instructions` do servidor, bloco no resultado e a frase determinística do servidor. Padrão = texto atual do `SYSTEM_PROMPT`, movido para `src/prompts.py` sem alterar o `ask`. Substituível por `MCP_SYSTEM_PROMPT` ou `MCP_SYSTEM_PROMPT_FILE` (só MCP). |
+| Transportes | **stdio** (o cliente inicia `python -m src.mcp_server`) e **Streamable HTTP** em `127.0.0.1:8100/mcp`, com `GET /health`, como serviço `mcp` do Compose. No Docker, o stdio usa o serviço `cli`. |
+| SDK | `mcp==2.3.0` (`MCPServer` em `mcp.server.mcpserver`; o `FastMCP` do SDK 1.x foi renomeado). Instala sem conflito com as versões fixadas. |
+| Modelo | Carregado uma vez pelo `EmbedderCache` (F06), aquecido em segundo plano na subida. As ferramentas chamam o serviço em thread. |
+| Configuração | `MCP_DESCRIPTION` (o que a base cobre, para o cliente decidir chamar), `MCP_SYSTEM_PROMPT`, `MCP_SYSTEM_PROMPT_FILE`, `MCP_HOST` (`127.0.0.1`) e `MCP_PORT` (`8100`). `ANTHROPIC_API_KEY` e `LLM_MODEL` **não são usados** pelo servidor. |
+| Segurança | Só leitura (R18); trechos como dado não confiável (R19); HTTP só em `127.0.0.1` e sem autenticação nesta fase (R20); `folder` só filtra, sem leitura de arquivos do servidor; erros sem senha. |
+| Idioma | Resposta em português por padrão, configurável pelo prompt do `.env`. |
+
+**Cuidados:** em stdio a saída padrão é só do protocolo (logs e progresso vão para a saída de erro; nenhum `print`); a proteção contra DNS rebinding do SDK no HTTP dentro do contêiner pode exigir ajuste de `transport_security`, mantendo só `127.0.0.1`.
+
+**Limites:** não há garantia de que o modelo do cliente obedeça às regras (R1–R3 são orientadas); o `eval --answers` não mede isso. O `eval` de recuperação (hit rate e MRR, F11) continua sendo a métrica da busca.
+
+**Fora do escopo da F18:** acesso remoto, autenticação e HTTPS, `read_passage`, usuário de banco só de leitura, `resources` e `prompts` MCP, clientes só-remoto (ChatGPT e Gemini de consumo).
+
+**Regressão prevista:** F06 (`search`), F07 (`ask`, pela refatoração do prompt), F11 (`eval`), F09 (`folders`), F14 e F15.
