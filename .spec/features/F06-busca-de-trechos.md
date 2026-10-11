@@ -263,7 +263,7 @@ SELECT to_tsquery('portuguese', 'posso | trabalhar | casa'), to_tsquery('english
 - **Sem limiar de relevância na F06**: devolve sempre os `top_k` melhores, com a pontuação. O "não encontrei" é da F07, com o valor da F11.
 - **`ts_rank_cd`** (e não `ts_rank`): considera a proximidade dos termos.
 - **Índice HNSW com filtro:** `hnsw.iterative_scan = relaxed_order` evita resultados faltando quando o filtro elimina vizinhos; com poucos documentos o planejador usa varredura exata.
-- **`weighted` e rerank fora**: o RRF cobre o caso, e o legado `src/fusion.py` continua até a F12.
+- **`weighted` e rerank fora**: o RRF cobre o caso, e o legado `src/fusion.py` continua até a F12. *(F12: `fusion.py` removido.)*
 
 **Riscos aceitos**
 - O `to_tsvector` do Postgres tokeniza `E-5107` como `-5107` (o `E` vira palavra vazia no português). Funciona para casar o código, e é o mesmo tratamento na consulta; códigos que só diferem pelo prefixo podem casar entre si. Medir no passo 4 e no 10.

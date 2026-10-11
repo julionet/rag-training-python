@@ -1,56 +1,64 @@
 # RAG Training (Python)
 
-Aplicação de estudo dos conceitos principais de **RAG** (Retrieval-Augmented Generation). Ela responde perguntas sobre um documento de texto: recupera os trechos mais relevantes e envia só esses trechos ao LLM (Claude).
+Aplicação de estudo de **RAG** (Retrieval-Augmented Generation). Ela cadastra documentos **TXT, MD e PDF com texto**, guarda os trechos e seus vetores no **PostgreSQL com pgvector**, busca os trechos mais relevantes para uma pergunta e pede ao **Claude** uma resposta baseada **só** nesses trechos, com a indicação de documento e página. Se os documentos não trazem a informação, ela diz que não encontrou.
 
-Escopo atual:
-
-- Entrada: **apenas arquivos TXT**.
-- Base vetorial: **arquivos locais** (`numpy` + JSON). Não há banco de dados vetorial.
-- Embeddings: **SentenceTransformer**, modelo configurável (exemplo: `BAAI/bge-m3`).
-- Busca: semântica, léxica (BM25) e híbrida (RRF e média ponderada).
+- Interface: **linha de comando** (`python -m src.cli`) e menu interativo.
+- Embeddings: **SentenceTransformer** (exemplo: `BAAI/bge-m3`, 1024 dimensões).
+- Busca: **híbrida em SQL** (significado + palavras exatas, em português e inglês), com filtro opcional por pasta.
 - Geração: **Claude**, pela SDK `anthropic`.
 
-> A evolução planejada (PDF + PostgreSQL/pgvector) está descrita em [.spec/ARQUITETURA.md](.spec/ARQUITETURA.md).
+O projeto é conduzido por **Spec Driven Development**: as regras e as decisões estão em [.spec/](.spec/) (`NEGOCIO.md`, `ARQUITETURA.md`, `ROADMAP.md` e uma spec por feature).
 
 ---
 
 ## Arquitetura
 
 ```
-                 INDEXAÇÃO
- arquivo .txt ─► chunking ─► embeddings ─► VectorStore ─► data/index/
-                    │                         (vectors.npy + texts.json)
-                    └────────────────────► LexicalSearch (BM25, em memória)
+              CADASTRO (ingest / reindex)
+ arquivo ─► leitura ─► trechos ─► vetores ─► PostgreSQL
+ (TXT/MD/PDF)  (páginas)  (por título/       (documents, chunks,
+                           parágrafo)          pgvector + tsvector)
 
-                 CONSULTA
- pergunta ─► embedding ─► busca semântica ┐
-        └──► tokenização ► busca BM25     ├─► fusão (RRF / ponderada) ─► top_k chunks
-                                          ┘                                  │
-                                       resposta com citações [n] ◄─ Claude ◄─┘
+              CONSULTA (search / ask)
+ pergunta ─► vetor ─► busca híbrida em SQL (RRF) ─► limiar de relevância
+                                                         │
+                       resposta com fontes [n] ◄─ Claude ◄┘
 ```
 
 ## Estrutura do projeto
 
 ```
 src/
-  config.py          variáveis de ambiente (.env)
-  chunking.py        4 estratégias de divisão de texto
-  embeddings.py      classe Embedder (SentenceTransformer)
-  vector_store.py    base vetorial em memória, salva em disco
-  lexical_search.py  busca BM25
-  fusion.py          fusão de rankings (ponderada e RRF)
-  generation.py      prompt e chamada ao Claude
-  rag.py             pipeline RAG semântico
-  hybrid_rag.py      pipeline RAG híbrido
-scripts/             scripts executáveis (indexar, perguntar, comparar)
+  cli.py                 comandos e formatação da saída
+  menu.py                menu interativo e modo conversa
+  config.py              variáveis do .env
+  db.py                  conexão, migrações e verificação do ambiente
+  repository.py          SQL de documentos, trechos e pastas
+  loaders.py             leitura de TXT, MD e PDF (página a página)
+  chunking.py            divisão em trechos (estratégia estruturada e outras)
+  embeddings.py          Embedder (SentenceTransformer) e embed_chunks
+  ingestion.py           cadastro de um arquivo
+  folder_ingestion.py    cadastro e atualização incremental de pastas
+  retrieval.py           busca em SQL (rrf, semantic, lexical) e limiar
+  search_service.py      fluxo do comando search
+  generation.py          prompt e chamada ao Claude
+  answer_service.py      fluxo do comando ask
+  management_service.py  pastas, listagem e remoção
+  evaluation.py          perguntas de teste e métricas
+  evaluation_service.py  fluxo do comando eval
+sql/                     migrações 001 a 003 e setup_admin.sql
+scripts/                 scripts de apoio (veja abaixo)
 data/
   manual_colaborador.txt   documento de exemplo
-  index/                   índice gerado (vectors.npy, texts.json)
+  amostras/                arquivos de exemplo e de teste manual
+  avaliacao/               documentos e perguntas do comando eval
+.spec/                   especificações (negócio, arquitetura, roadmap, features)
 ```
 
 ## Requisitos e instalação
 
-- Python 3.10 ou superior (o código usa `list[str]` e `X | None`).
+- Python 3.10 ou superior.
+- PostgreSQL com a extensão **pgvector** (desenvolvido com PostgreSQL 18.6 e pgvector 0.8.7).
 - Chave da API da Anthropic.
 - Na primeira execução, o modelo de embeddings é baixado do Hugging Face.
 
@@ -61,121 +69,76 @@ pip install -r requirements.txt
 cp .env.example .env   # depois edite os valores
 ```
 
-Dependências (`requirements.txt`): `anthropic`, `sentence-transformers`, `rank-bm25`, `numpy`, `python-dotenv`.
+Preparo do banco (uma vez, como superusuário do Postgres; cria o usuário `rag_user`, o banco `rag_training_db` e a extensão `vector`):
+
+```bash
+psql -d postgres -v rag_password='<SENHA>' -f sql/setup_admin.sql
+python -m src.cli init-db     # aplica as migrações
+python -m src.cli check       # confere ambiente, banco e variáveis
+```
 
 ### Configuração (`.env`)
 
 | Variável | Uso |
 |---|---|
-| `ANTHROPIC_API_KEY` | Chave da API do Claude (obrigatória para `ask`). |
-| `HF_TOKEN` | Token do Hugging Face (usado em `check_setup` e `compare_chunking`). |
-| `LLM_MODEL` | Modelo do Claude usado na geração. |
+| `ANTHROPIC_API_KEY` | Chave da API do Claude (obrigatória no `ask`). |
+| `LLM_MODEL` | Modelo do Claude usado na resposta. |
 | `EMBEDDING_MODEL` | Modelo SentenceTransformer, por exemplo `BAAI/bge-m3`. |
+| `HF_TOKEN` | Token do Hugging Face (opcional). |
+| `DATABASE_URL` | Conexão com o Postgres (`postgresql://rag_user:<SENHA>@localhost:5432/rag_training_db`). A senha fica só no `.env`. |
+| `RELEVANCE_THRESHOLD` | Similaridade mínima (0 a 1) do melhor trecho para o `ask` chamar o Claude. Padrão `0.50`; vazio desliga o limiar. |
 
-## Uso rápido
+## Uso
 
-Execute sempre da raiz do projeto, com `python -m`:
+Execute sempre da raiz do projeto. Sem argumentos, em um terminal interativo, o comando abre o menu.
+
+| Comando | O que faz |
+|---|---|
+| `python -m src.cli init-db` | Aplica o esquema e as migrações (idempotente). |
+| `python -m src.cli check` | Verifica variáveis do `.env`, banco, tabelas e modelo de embeddings. |
+| `python -m src.cli ingest <arquivo\|pasta> [--recursive/--no-recursive] [--force] [--prune]` | Cadastra um arquivo ou uma pasta. Atualização incremental: só o que é novo ou mudou. `--prune` remove da base, com confirmação, o que sumiu da pasta. |
+| `python -m src.cli reindex <pasta>\|--all [--prune]` | Reprocessa as pastas já registradas. |
+| `python -m src.cli search "<pergunta>" [--method rrf\|semantic\|lexical] [--top-k N] [--fetch-k N] [--folder <pasta>] [--full]` | Mostra os trechos recuperados, sem chamar o Claude. |
+| `python -m src.cli ask "<pergunta>" [--method ...] [--top-k N] [--fetch-k N] [--folder <pasta>]` | Responde com fontes (documento, página, seção). |
+| `python -m src.cli folders` | Lista as pastas registradas. |
+| `python -m src.cli list [--folder <pasta>]` | Lista os documentos da base. |
+| `python -m src.cli delete <arquivo\|pasta>` | Remove um documento ou uma pasta, com confirmação. |
+| `python -m src.cli eval [--questions ...] [--strategies ...] [--max-chars ...] [--methods ...] [--top-k N] [--answers]` | Mede a qualidade da recuperação (hit rate e MRR), compara estratégias e tamanhos de trecho e propõe o limiar. Não grava na base. `--answers` roda o `ask` real e consome a cota do Claude. |
+
+Exemplo:
 
 ```bash
-python -m scripts.check_setup                    # valida Claude e embeddings
-python -m scripts.build_index                    # indexa data/manual_colaborador.txt
-python -m scripts.ask "Quantos dias de férias eu tenho?"
-python -m scripts.ask_hybrid "erro E-5107" rrf   # métodos: rrf | weighted | semantic | lexical
+python -m src.cli ingest data/manual_colaborador.txt
+python -m src.cli ask "Quantos dias de férias eu tenho?"
+python -m src.cli ask "O que significa o erro E-5107?" --method rrf
 ```
 
----
+O menu oferece: adicionar pasta, reindexar uma ou todas, listar, perguntar (modo conversa), remover e verificar o ambiente.
 
-## Funcionalidades por módulo
+## Scripts de apoio
 
-### `src/config.py`
-Carrega o `.env` com `python-dotenv` e expõe `ANTHROPIC_API_KEY`, `HF_TOKEN`, `LLM_MODEL` e `EMBEDDING_MODEL`.
-
-### `src/chunking.py`
-Quatro estratégias de divisão de texto, para comparar na prática:
-
-| Função | Como funciona | Parâmetros |
-|---|---|---|
-| `fixed_size_chunks` | Corta a cada N caracteres, com sobreposição. Simples, mas pode cortar no meio de frases. | `chunk_size=400`, `overlap=80` |
-| `sentence_chunks` | Separa por sentenças (`split_sentences`), agrupa até um máximo de caracteres e repete as últimas sentenças no chunk seguinte. | `max_chars=400`, `overlap_sentences=1` |
-| `recursive_chunks` | Tenta cortar pelo separador mais natural (`\n\n`, `\n`, `. `, espaço), junta pedaços pequenos vizinhos e aplica overlap pela cauda do chunk anterior, sem cortar palavras. **É a estratégia usada nos pipelines.** | `chunk_size=400`, `overlap=60` |
-| `semantic_chunks` | Gera embeddings de cada sentença e corta onde a similaridade entre sentenças consecutivas cai abaixo de um percentil. Recebe o modelo como argumento. | `percentile=25` |
-
-Os pipelines chamam `recursive_chunks` com `chunk_size=500` e `overlap=60`.
-
-### `src/embeddings.py`
-Classe `Embedder`: encapsula o `SentenceTransformer` (nome vindo de `EMBEDDING_MODEL`).
-- `embed(texts, batch_size=16)`: devolve matriz `(n, dimensões)` com **vetores normalizados**, então o produto escalar equivale à similaridade de cosseno.
-- `embed_one(text)`: atalho para um único texto.
-
-### `src/vector_store.py`
-Classe `VectorStore`: base vetorial local, em memória.
-- `add(texts, vectors, metadata)`: acrescenta chunks, vetores e metadados (`source`, `chunk`).
-- `search(query_vector, k)`: calcula `vetores @ consulta` e devolve os `k` melhores com `index`, `score`, `text` e `metadata`. É força bruta (varre todos os vetores).
-- `save(dir)` / `load(dir)`: persistem em `vectors.npy` e `texts.json`.
-
-### `src/lexical_search.py`
-Busca por palavras-chave com **BM25** (`rank-bm25`).
-- `tokenize`: minúsculas, tokens alfanuméricos, preserva códigos com hífen (`e-5107`, `sku-882`) e remove stopwords do português (`STOPWORDS_PT`).
-- `LexicalSearch(chunks).search(query, k)`: devolve `index`, `score` e `text`.
-
-Útil quando a pergunta contém termos exatos, como códigos de erro, que a busca semântica tende a errar.
-
-### `src/fusion.py`
-Combina os rankings semântico e léxico:
-- `weighted_fusion(..., alpha=0.5)`: normaliza os scores (min-max) e faz média ponderada: `alpha * semântico + (1 - alpha) * léxico`.
-- `reciprocal_rank_fusion(..., rrf_k=60)`: usa só a **posição** de cada resultado (`1 / (rrf_k + rank)`), então não depende da escala dos scores. É o método padrão.
-
-### `src/generation.py`
-Classe `Generator`: chama o Claude (`anthropic.Anthropic`).
-- `SYSTEM_PROMPT`: responde em português, **só com o contexto fornecido**, cita fontes como `[1]`, `[2]`, ignora instruções que apareçam dentro do contexto (defesa contra prompt injection) e, sem resposta no contexto, devolve exatamente "Não encontrei essa informação nos documentos disponíveis.".
-- `build_user_prompt`: monta `<contexto>` com `<trecho id="n">` numerados e `<pergunta>`.
-- `answer(question, chunks, max_tokens=600)`: devolve o texto da resposta.
-
-### `src/rag.py` (`RAGPipeline`)
-Pipeline **somente semântico**.
-- `index_file(path, chunk_size=500, overlap=60)`: lê o TXT, divide com `recursive_chunks`, gera embeddings e adiciona ao `VectorStore`.
-- `save()` / `load()`: gravam e carregam o índice de `data/index`.
-- `retrieve(question)`: busca os `top_k` (padrão 3) chunks mais similares.
-- `ask(question)`: recupera, gera a resposta e devolve `{question, answer, sources}`.
-
-### `src/hybrid_rag.py` (`HybridRAGPipeline`)
-Pipeline **híbrido**: mantém o índice vetorial e o BM25.
-- `top_k=3` chunks finais; `fetch_k=10` candidatos de cada busca antes da fusão.
-- `retrieve(question, method, alpha)`: `rrf` (padrão), `weighted`, `semantic` ou `lexical`.
-- `ask(question, method, alpha)`: igual ao `RAGPipeline.ask`, com o campo `method`.
-- `load()` recarrega o índice vetorial e **reconstrói o BM25** a partir dos textos.
-
----
-
-## Scripts
+Executados com `python -m scripts.<nome>`, não fazem parte da CLI:
 
 | Script | O que faz |
 |---|---|
-| `check_setup` | Testa a chamada ao Claude e carrega o modelo de embeddings, mostrando dimensão, dispositivo e similaridades de exemplo (carro/automóvel/bolo). |
-| `build_index` | Indexa `data/manual_colaborador.txt` e salva em `data/index`. |
-| `ask` | Pergunta no pipeline semântico (usa o índice salvo) e mostra resposta e fontes. |
-| `ask_hybrid` | Pergunta no pipeline híbrido; o último argumento opcional escolhe o método. |
-| `semantic_search` | Indexa com `sentence_chunks` e roda perguntas de exemplo, só recuperação (sem LLM). |
-| `compare_chunking` | Imprime as 4 estratégias de chunking sobre o documento de exemplo, com estatísticas de tamanho. |
-| `compare_search` | Compara resultados semânticos e BM25 lado a lado. |
-| `compare_methods` | Compara `semantic`, `lexical`, `weighted` e `rrf` (**reindexa e sobrescreve** `data/index`). |
-
-> `semantic_search` e `compare_methods` também regravam `data/index` com o chunking que usam. Rode `build_index` de novo para voltar ao índice padrão.
+| `check_setup` | Testa uma chamada real ao Claude e carrega o modelo de embeddings, mostrando dimensão, dispositivo e similaridades de exemplo. |
+| `read_document <arquivo> [--page N]` | Mostra como um TXT, MD ou PDF é lido, página a página. |
+| `chunk_document <arquivo> [--strategy ...] [--max-chars N] [--overlap N]` | Mostra os trechos que uma estratégia gera para um arquivo. |
+| `embed_document <arquivo> [--no-db] ...` | Vetoriza os trechos de um arquivo e mostra estatísticas. |
+| `compare_chunking` | Compara as quatro estratégias simples de divisão sobre o documento de exemplo. |
 
 ## Dados de exemplo
-`data/manual_colaborador.txt` é um manual fictício ("Acme Tech") com 5 seções: férias, trabalho remoto, reembolso, suporte de TI (códigos `E-4021` e `E-5107`) e segurança. Os códigos de erro servem para mostrar onde a busca léxica ganha da semântica. O diretório `data/index/` está versionado.
+- `data/manual_colaborador.txt`: manual fictício ("Acme Tech") com férias, trabalho remoto, reembolso, suporte de TI (códigos `E-4021` e `E-5107`) e segurança.
+- `data/amostras/`: arquivos pequenos e de borda (PDF com e sem texto, corrompido, protegido, Markdown, Latin-1) usados nos roteiros de teste manual.
+- `data/avaliacao/`: documentos em português e inglês e `perguntas.json`, usados pelo comando `eval`.
 
----
+## Desenvolvimento
 
-## Limitações conhecidas
+- Não há testes automatizados. Cada feature tem um **roteiro de teste manual** na sua spec (`.spec/features/`), repetido na regressão.
+- Antes de implementar uma feature, a spec precisa ser aprovada.
 
-1. **Tokenizer léxico não suporta acentos**: o regex `[a-z0-9]` quebra "refeição" em "refei" e "o", o que prejudica o BM25 em português.
-2. **`HybridRAGPipeline.index_file` com vários arquivos**: `self.chunks` é sobrescrito a cada arquivo, então o BM25 cobre só o último e os índices divergem.
-3. **Tudo em memória, sem gestão de documentos**: sem IDs estáveis, remoção, reindexação ou deduplicação. O BM25 é reconstruído a cada `load()`.
-4. **A fusão descarta `metadata`** (fonte e posição) dos resultados.
-5. **`recursive_chunks`**: perde o ponto ao dividir por `". "`, o overlap é em caracteres e ignora os títulos Markdown (`##`).
-6. **`split_sentences` é ingênuo**: quebra em abreviações e valores como "R$ 1.000,00.".
-7. **`semantic_chunks` sem limite de tamanho**: pode gerar chunks muito grandes ou muito pequenos.
-8. **Geração sem salvaguardas**: não trata contexto vazio nem aplica limiar de relevância, e lê `response.content[0].text` sem checar o tipo do bloco.
-9. **Duplicação**: `rag.py` e `hybrid_rag.py` repetem a lógica, e há vários scripts de experimento.
-10. **Só TXT**, com um arquivo fixo em `build_index`, e sem CLI de ingestão.
+## Limitações e fora de escopo
+- Sem reconhecimento de texto em PDFs escaneados (OCR); outros formatos (Word, planilhas) não são aceitos.
+- Sem API ou interface web e sem controle de acesso: todos veem todos os documentos.
+- Trocar o `EMBEDDING_MODEL` exige reindexar a base inteira; hoje o comando só bloqueia e orienta.
+- Os trechos usados na resposta são enviados ao Claude (serviço externo).

@@ -208,7 +208,6 @@ def semantic_chunks(
 
 _HEADING = re.compile(r"^(#{1,3})\s+(.+?)\s*$")
 _TABLE_SEPARATOR = re.compile(r"^\|[\s:|-]+\|?$")
-_MAX_SECTION_LEVEL = 3
 
 
 def _check_params(max_chars: int, overlap_chars: int) -> None:

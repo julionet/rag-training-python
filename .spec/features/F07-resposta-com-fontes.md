@@ -197,7 +197,7 @@ Sem variáveis novas; passam a ser **exigidas** pelo `ask` as já existentes no 
 | 28 | Aviso R11 | Repetir o passo 1 redirecionando `stdout` (`> /dev/null`) | O aviso de envio ao serviço externo aparece em `stderr`. |
 | 29 | Tempo | Anotar o tempo total, o da busca e o da resposta | Registrar na seção 14 (sem meta fixa). |
 | 30 | Importação sem efeitos | `python -c "import src.generation, src.answer_service"` | Sem saída, sem conectar ao banco nem carregar o modelo de embeddings. |
-| 31 | Legado intacto | `python -c "from src.generation import Generator, build_user_prompt"` | Importa sem erro (o legado continua utilizável até a F12). |
+| 31 | Legado intacto | `python -c "from src.generation import Generator, build_user_prompt"` | Importa sem erro (o legado continua utilizável até a F12). | *(F12: o legado foi removido; este passo deixou de se aplicar.)*
 | 32 | Somente o previsto | `git status` | Só os arquivos previstos (seção 5) e a amostra `data/amostras/injecao.txt`. |
 
 **Consultas úteis para conferir o banco** (se aplicável)
@@ -225,7 +225,7 @@ WHERE d.filename = 'manual_colaborador.txt' AND c.section ILIKE '%Trabalho remot
 - **Fontes exibidas: só as citadas (`[n]`).** Mais limpo e coerente com R2. A numeração é a do ranking, sem renumerar.
 
 **Decisões tomadas por mim, a confirmar na aprovação**
-- **`Generator` atual intacto**, com método novo `answer_hits`. O legado (`rag.py`, `hybrid_rag.py`) usa `dict` e sai só na F12.
+- **`Generator` atual intacto**, com método novo `answer_hits`. O legado (`rag.py`, `hybrid_rag.py`) usa `dict` e sai só na F12. *(F12: `rag.py`, `hybrid_rag.py` e o método `answer` foram removidos.)*
 - **Resposta com informação e sem citação (T7):** mostra a resposta e `Fontes: o Claude não citou nenhum trecho.`, com aviso. Alternativa: tratar como erro; rejeitada para não esconder uma resposta possivelmente útil.
 - **Frase padrão detectada no início da resposta** (T6), comparando com `NOT_FOUND_ANSWER`, para não listar fontes numa resposta negativa.
 - **`check` só confere presença** das variáveis do Claude, sem chamar a API (evita custo e dependência de rede). Valida chave e modelo de fato só no `ask`.

@@ -32,15 +32,6 @@ class GeneratedAnswer:
     truncated: bool  # resposta cortada por max_tokens
 
 
-def build_user_prompt(question: str, chunks: list[dict]) -> str:
-    """Monta o prompt com os chunks numerados."""
-    context = "\n\n".join(
-        f'<trecho id="{i}">\n{c["text"]}\n</trecho>'
-        for i, c in enumerate(chunks, start=1)
-    )
-    return f"<contexto>\n{context}\n</contexto>\n\n<pergunta>\n{question}\n</pergunta>"
-
-
 def _attr(value: object) -> str:
     return str(value).replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
 
@@ -62,16 +53,6 @@ class Generator:
         if not ANTHROPIC_API_KEY:
             raise RuntimeError("ANTHROPIC_API_KEY não encontrada no .env")
         self.client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
-    def answer(self, question: str, chunks: list[dict], max_tokens: int = 600) -> str:
-        content = build_user_prompt(question, chunks)
-        response = self.client.messages.create(
-            model=LLM_MODEL,
-            max_tokens=max_tokens,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": content}],
-        )
-        return response.content[0].text
 
     def answer_hits(self, question: str, hits: list, max_tokens: int = ANSWER_MAX_TOKENS) -> GeneratedAnswer:
         """Responde com os trechos da F06. Traduz os erros do SDK em GenerationError."""

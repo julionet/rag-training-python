@@ -109,7 +109,7 @@ Nenhum comando novo em `python -m src.cli` (o `ingest` nasce na F05). Para o tes
 | Arquivo | Responsabilidade | Funções / classes |
 |---|---|---|
 | `src/chunking.py` | Estratégias de divisão e tipo `Chunk`. | `Chunk(chunk_index: int, page: int, section: str \| None, content: str)` com propriedade `embedding_text`; `structured_chunks(pages: Iterable[Page], max_chars=900, overlap_chars=110) -> Iterator[Chunk]`; `chunk_pages(pages, strategy="structured", model=None, **params) -> Iterator[Chunk]`; as 4 antigas corrigidas. |
-| `scripts/chunk_document.py` | Apoio ao teste manual (descartável; pode sair na F12). | `main()` |
+| `scripts/chunk_document.py` | Apoio ao teste manual (descartável; pode sair na F12). | `main()` | *(F12: o script foi mantido.)*
 
 Detalhes:
 - `chunk_pages` com estratégia antiga aplica a função **página a página** e devolve `Chunk` com `section=None`; assim F05 e F11 usam a mesma interface para todas.
@@ -173,7 +173,7 @@ Sem mudanças no `.env`.
 | Feature | Roteiros a repetir (#) | Motivo |
 |---|---|---|
 | F02 | 1, 8, 12 | Confirmar que `Page`/`iter_pages` seguem intactos (F03 só consome). |
-| Código atual (`rag.py`, `hybrid_rag.py`, `scripts/compare_*.py`, `semantic_search.py`) | `python -m scripts.compare_chunking` e `python -c "import src.rag, src.hybrid_rag"` | Usam `recursive_chunks`/`sentence_chunks`, cujo resultado muda com as correções. Conferir que ainda rodam. O índice em `data/index/` **não é reconstruído** (e não é removido). |
+| Código atual (`rag.py`, `hybrid_rag.py`, `scripts/compare_*.py`, `semantic_search.py`) | `python -m scripts.compare_chunking` e `python -c "import src.rag, src.hybrid_rag"` | Usam `recursive_chunks`/`sentence_chunks`, cujo resultado muda com as correções. Conferir que ainda rodam. O índice em `data/index/` **não é reconstruído** (e não é removido). | *(F12: removido; nota histórica.)*
 | F01 | `python -m src.cli check` | Sanidade do ambiente (nada muda, mas é barato). |
 | F04, F05, F11 | — | Passam a consumir `Chunk`/`chunk_pages`. Mudança futura neles exige repetir os passos 1, 8, 11 e 14. |
 

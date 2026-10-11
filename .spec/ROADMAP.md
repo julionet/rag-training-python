@@ -3,7 +3,7 @@
 Documentos relacionados: [NEGOCIO.md](NEGOCIO.md) (o quê e por quê) e [ARQUITETURA.md](ARQUITETURA.md) (como).
 Cada feature terá sua especificação em `.spec/features/FNN-nome-curto.md` (ex.: `F05-cadastro-de-documento.md`), sempre criada a partir do template [features/_TEMPLATE.md](features/_TEMPLATE.md).
 
-**Status:** roadmap **aprovado**. Veja a tabela "Status das features" no fim deste documento.
+**Status:** roadmap **aprovado**; **F01–F13 verificadas** (M1 a M4 concluídos). Veja a tabela "Status das features" no fim deste documento.
 
 ## Como trabalharemos (SDD)
 
@@ -40,7 +40,7 @@ Em vez de construir cada camada inteira, o primeiro marco entrega o caminho comp
 | F10 | **CLI e menu interativo** | Comandos diretos e menu numerado que reúnem todas as operações. | — | F06–F09 |
 | F11 | **Avaliação de qualidade** | Conjunto de perguntas de teste e métricas para comparar estratégias de divisão e definir parâmetros padrão (tamanho dos trechos, limiar de relevância). | Critérios da seção 6 do NEGOCIO | F06, F07 |
 | F13 | **Suporte a Markdown (.md)** | Aceitar `.md` (tipo `md`, migração 002 do `file_type`, `init-db` com várias migrações). Ampliação de F01, F02 e F05. | R4, R7 | F01, F02, F05 |
-| F12 | **Limpeza e documentação final** | Remover os módulos antigos substituídos, manter `data/index/`, atualizar o `README.md`. | — | Todas |
+| F12 | **Limpeza e documentação final** | Remover os módulos, scripts e dados do fluxo antigo (incluindo `data/index/`), manter só o que a aplicação usa e atualizar o `README.md`. | — | Todas |
 
 ### Observações sobre as features
 - **Comandos da CLI nascem junto de cada feature** (por exemplo, `ingest` em F05 e `ask` em F07). F10 reúne tudo no menu e na interface final, sem reescrever a lógica.
@@ -92,4 +92,4 @@ Ordem sugerida, a planejar depois de M4:
 | F09 | Aprovada | Verificada (2026-10-10) |
 | F10 | Aprovada | Verificada (2026-10-10) |
 | F11 | Aprovada | Verificada (2026-10-10) |
-| F12 | Pendente | Pendente |
+| F12 | Aprovada | Verificada (2026-10-10) |

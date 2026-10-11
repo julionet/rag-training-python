@@ -124,7 +124,7 @@ Nenhum comando novo em `python -m src.cli`: o cadastro (`ingest`) nasce na F05. 
 | Arquivo | Responsabilidade | Funções / classes |
 |---|---|---|
 | `src/loaders.py` | Leitura de TXT e PDF e tipos de dados. | `Page(number: int, text: str)`, `DocumentInfo(filename, file_type, sha256, page_count)`, `Document(filename, file_type, sha256, pages: list[Page])`, `inspect_document(path) -> DocumentInfo`, `iter_pages(path) -> Iterator[Page]`, `load_document(path) -> Document`, `LoaderError(Exception)` |
-| `scripts/read_document.py` | Apoio ao teste manual (descartável; pode ser removido na F12). Usa `inspect_document` e `iter_pages`; com `--page N` para de iterar ao chegar na página N. | `main()` |
+| `scripts/read_document.py` | Apoio ao teste manual (descartável; pode ser removido na F12). Usa `inspect_document` e `iter_pages`; com `--page N` para de iterar ao chegar na página N. | `main()` | *(F12: o script foi mantido.)*
 
 Detalhes:
 - `iter_pages` chama `inspect_document` antes de entregar a primeira página (então levanta os mesmos erros, uma única vez) e mantém o arquivo aberto só durante a iteração, fechando-o também se quem chama parar antes do fim.

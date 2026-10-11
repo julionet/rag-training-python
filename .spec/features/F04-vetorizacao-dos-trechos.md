@@ -121,7 +121,7 @@ Não há comando novo em `src.cli` nem item de menu (a vetorização é interna 
 |---|---|---|
 | `src/embeddings.py` | Modelo local de embeddings. | `Embedder(model_name=EMBEDDING_MODEL, batch_size=64, max_seq_length=8192)` com `model_name`, `dimension`, `device`, `embed(texts, batch_size=None) -> np.ndarray`, `embed_one(text)`, `count_tokens(texts) -> list[int]`; `embed_chunks(embedder, chunks: Iterable[Chunk], batch_size=None) -> Iterator[tuple[Chunk, np.ndarray]]` (emite o aviso de tokens); `EmbeddingError`. |
 | `src/db.py` | Registro do modelo em `app_meta`. | `get_embedding_meta(conn) -> tuple[str, int] \| None`; `ensure_embedding_model(conn, model_name) -> bool` (erro se divergir; `True` se já registrado); `register_embedding_model(conn, model_name, dim)` (grava só se ausente, `INSERT … ON CONFLICT DO NOTHING`); `check_environment()` ampliado. |
-| `scripts/embed_document.py` | Apoio ao teste manual (descartável; pode sair na F12). | `main()` |
+| `scripts/embed_document.py` | Apoio ao teste manual (descartável; pode sair na F12). | `main()` | *(F12: o script foi mantido.)*
 
 Detalhes:
 - `embed` e `embed_one` mantêm o comportamento atual para o código legado (`rag.py`, `hybrid_rag.py`, scripts `compare_*`).

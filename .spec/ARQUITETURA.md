@@ -1,7 +1,7 @@
 # ARQUITETURA — Evolução da aplicação RAG (TXT + MD + PDF, PostgreSQL/pgvector)
 
-Status: **proposta aprovada para documentação; nada implementado.**
-Base: análise do código descrito no [README.md](README.md).
+Status: **implementada e verificada (F01–F13, marcos M1 a M4).** Este documento descreve a arquitetura adotada; trechos marcados com "F12" ou "removido" registram o que existia antes.
+Visão de uso e instalação: [README.md](../README.md).
 
 ## 1. Objetivos e restrições
 
@@ -20,7 +20,7 @@ Base: análise do código descrito no [README.md](README.md).
 
 **Evoluir.** A divisão em camadas (`chunking`, `embeddings`, `generation`, `fusion`) está boa, e o prompt de geração é sólido (só contexto, citações, defesa contra injection). O que muda de verdade é armazenamento e entrada:
 
-| Hoje | Evolução |
+| Antes (removido na F12) | Evolução (implementada) |
 |---|---|
 | `vector_store.py` (numpy + JSON) | Repositório Postgres + pgvector |
 | `lexical_search.py` (BM25 em memória) | Busca textual do Postgres (`tsvector`, config `portuguese`) |
@@ -80,7 +80,7 @@ Novo módulo `src/loaders.py` com `inspect_document(path) -> DocumentInfo` (vali
 
 **Por quê:** PDFs e TXT com títulos perdem contexto quando o chunk não diz a que seção pertence ("o limite é R$ 120" sem saber que é refeição). O prefixo de seção melhora a recuperação, e a divisão por estrutura evita cortes no meio de ideias.
 
-**Não vamos presumir que é melhor: vamos medir.** Um script de avaliação (`scripts/experiments/eval_retrieval.py`) usa um conjunto de perguntas com o trecho esperado e compara as estratégias por **hit rate@k** e **MRR**.
+**Não vamos presumir que é melhor: vamos medir.** O comando `eval` (F11) usa um conjunto de perguntas com o trecho esperado e compara as estratégias por **hit rate@k** e **MRR**.
 
 ## 6. PostgreSQL + pgvector
 
@@ -225,7 +225,7 @@ Menu numerado em terminal puro (`input()`, sem dependência extra), que reutiliz
 
 A opção 5 abre um modo de conversa que mantém o método e o filtro de pasta até o usuário sair.
 
-Os scripts atuais de comparação passam para `scripts/experiments/`, adaptados ao novo repositório.
+*(F12: os scripts de comparação do fluxo antigo foram removidos; ficam em `scripts/` apenas os de apoio aos roteiros e o `check_setup`.)*
 
 ## 9. Configuração e dependências
 
@@ -243,7 +243,7 @@ Banco: `rag_training_db`; usuário: `rag_user`. A **senha fica só no `.env`** (
 
 (O `.env.example` já usa `LLM_MODEL`; a variável antiga `MODEL` foi corrigida.)
 
-Adicionar a `requirements.txt`, cada pacote junto da feature que o usa: `psycopg[binary]` (F01), `psycopg_pool` e `pgvector` (F05/F06) e `pymupdf4llm` (F02). Remover `rank-bm25` ao final.
+Adicionar a `requirements.txt`, cada pacote junto da feature que o usa: `psycopg[binary]` (F01), `psycopg_pool` e `pgvector` (F05/F06) e `pymupdf4llm` (F02). `rank-bm25` foi removido na F12.
 
 ## 10. Estrutura alvo
 
@@ -251,14 +251,15 @@ Adicionar a `requirements.txt`, cada pacote junto da feature que o usa: `psycopg
 .spec/                 (NEGOCIO.md, ARQUITETURA.md, ROADMAP.md, features/_TEMPLATE.md e as specs FNN-*.md)
 src/
   config.py  loaders.py  chunking.py  embeddings.py
-  db.py  repository.py  ingestion.py  folder_ingestion.py  retrieval.py  search_service.py  generation.py  pipeline.py  cli.py
+  db.py  repository.py  ingestion.py  folder_ingestion.py  retrieval.py  search_service.py  answer_service.py
+  generation.py  management_service.py  menu.py  evaluation.py  evaluation_service.py  cli.py
 sql/setup_admin.sql    (preparação manual, uma vez: usuário, banco e extensão; exige superusuário)
-sql/001_init.sql
-scripts/experiments/   (compare_chunking, compare_methods, eval_retrieval…)
-data/                  (documentos de exemplo)
+sql/001_init.sql  002_file_type_md.sql  003_busca_textual.sql
+scripts/               (check_setup, read_document, chunk_document, embed_document, compare_chunking)
+data/                  (manual_colaborador.txt, amostras/, avaliacao/)
 ```
 
-`retrieval.py` concentra os métodos de busca e a fusão; `pipeline.py` substitui `rag.py` e `hybrid_rag.py`.
+`retrieval.py` concentra os métodos de busca em SQL e o limiar de relevância. *(F12: não existe `pipeline.py`; o fluxo ficou em `search_service.py` e `answer_service.py`. Os scripts de comparação do fluxo antigo foram removidos; o `eval` da F11 faz a avaliação.)*
 
 ## 11. Fases de implementação
 
@@ -268,7 +269,7 @@ data/                  (documentos de exemplo)
 3. **Ingestão e CLI** (`ingest`, `list`, `delete`).
 4. **Busca híbrida em SQL** + `ask`, com paridade de resultados com o comportamento atual para as perguntas do manual.
 5. **Chunking estruturado** + script de avaliação (hit rate/MRR); decidir o padrão com base nos números.
-6. **Limpeza do legado:** remover `vector_store.py`, `lexical_search.py`, `rag.py` e `hybrid_rag.py`. **`data/index/` é mantido** (decisão do usuário), assim como o `data/manual_colaborador.txt`.
+6. **Limpeza do legado (F12, concluída):** removidos `vector_store.py`, `lexical_search.py`, `fusion.py`, `rag.py` e `hybrid_rag.py`. **`data/index/` foi removido na F12**, revogando a decisão anterior de mantê-lo; o `data/manual_colaborador.txt` fica.
 
 ## 12. Critérios de aceite
 
@@ -289,7 +290,7 @@ data/                  (documentos de exemplo)
 - Layout real dos PDFs (colunas, tabelas, cabeçalhos e rodapés repetidos): só é possível validar com amostras do usuário. Pode ser necessário remover cabeçalhos e rodapés repetidos.
 - Limiar mínimo de relevância e tamanho final dos chunks: serão definidos com a avaliação da fase 5, não de antemão.
 
-Resolvidos: banco `rag_training_db`, usuário `rag_user` (senha só no `.env`); `data/index/` não será removido; **arquivos duplicados (mesmo `sha256`) são ignorados**; **pgvector 0.8.7** (Homebrew) confirmado instalado, com Postgres 18.6.
+Resolvidos: banco `rag_training_db`, usuário `rag_user` (senha só no `.env`); `data/index/` foi removido na F12 (revoga a decisão anterior de mantê-lo); **arquivos duplicados (mesmo `sha256`) são ignorados**; **pgvector 0.8.7** (Homebrew) confirmado instalado, com Postgres 18.6.
 
 ## 14. Estratégia de testes
 
